@@ -13,7 +13,7 @@ SSH_USER="${SSH_USER:-root}"
 IMAGE_TAG="${IMAGE_TAG:-$(git rev-parse --short HEAD)}"
 PLATFORM="${PLATFORM:-linux/amd64}"
 DEPLOY_PATH="${DEPLOY_PATH:-/opt/theimposter}"
-DOMAIN="${DOMAIN:-theimposter.app}"
+DOMAIN="${DOMAIN:-theimposter.fun}"
 
 echo "Building backend image ${REGISTRY}/backend:${IMAGE_TAG}..."
 docker buildx build \

@@ -4,7 +4,7 @@ Mobile-first social deduction party game where one player is secretly the impost
 
 - 🧭 Core mechanics & etiquette: see [`RULES.md`](RULES.md)
 - 🗺️ Build roadmap & open tasks: see [`TODO.md`](TODO.md)
-- 🌐 Production target: `theimposter.app` with Caddy TLS termination on DigitalOcean
+- 🌐 Production target: `theimposter.fun` with Caddy TLS termination on DigitalOcean
 
 This repository contains:
 
@@ -53,7 +53,7 @@ npm run dev
 Visit `http://localhost:5173` for the dev UI. Configure an API base when proxying to remote servers via `.env`:
 
 ```
-VITE_API_BASE=https://api.theimposter.app
+VITE_API_BASE=https://api.theimposter.fun
 ```
 
 Production build:
@@ -88,7 +88,7 @@ docker compose up --build
 The default domain is `theimposter.test`; add it to `/etc/hosts` pointing at `127.0.0.1` for local development. Override the domain during deployment:
 
 ```bash
-DOMAIN=theimposter.app docker compose up --build -d
+DOMAIN=theimposter.fun docker compose up --build -d
 ```
 
 > For production, map ports 80/443 to the host and provide a valid DNS record so Caddy can obtain certificates automatically.
@@ -101,7 +101,7 @@ DOMAIN=theimposter.app docker compose up --build -d
 
 Suggested production environment variables:
 
-- `DOMAIN=theimposter.app`
+- `DOMAIN=theimposter.fun`
 - `RUST_LOG=info,theimposter_backend=debug`
 
 ### Namecheap DNS Setup
@@ -113,7 +113,7 @@ Point the apex domain and `www` subdomain at the DigitalOcean droplet so Caddy c
 3. Add an **A Record** with `Host` set to `*` (or use a `CNAME` for `www` pointing to `@` if wildcard support is not desired) and point it to the same IPv4 address.
 4. Remove any conflicting URL redirect records so the DNS changes take effect immediately.
 
-Once DNS propagates, Caddy will request certificates for `theimposter.app` and serve HTTPS automatically.
+Once DNS propagates, Caddy will request certificates for `theimposter.fun` and serve HTTPS automatically.
 
 ### Automated Rollout Script
 
@@ -128,7 +128,7 @@ Example usage:
 export REGISTRY=registry.digitalocean.com/theimposter
 export SSH_HOST=203.0.113.42   # droplet IP or hostname
 export SSH_USER=root           # optional, defaults to root
-export DOMAIN=theimposter.app  # forwarded to docker compose file
+export DOMAIN=theimposter.fun  # forwarded to docker compose file
 ./deploy/release.sh
 ```
 
