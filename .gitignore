@@ -9,3 +9,5 @@ frontend/.svelte-kit/
 .idea/
 .vscode/
 *.env
+frontend/playwright-reports/
+frontend/test-results/
