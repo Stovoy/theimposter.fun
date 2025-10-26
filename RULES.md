@@ -23,12 +23,13 @@
   - All other players are randomly assigned one of the remaining roles tied to the chosen location.
   - Non-imposters see the location and their role on demand via the “View Role” button.
   - The Imposter sees only that they are the Imposter.
+- The default round view shows turn order, timers, and actions; players must tap dedicated buttons to reveal their role or the location list.
 - A random player is chosen to take the first turn. The active player sees a random question selected from the enabled categories in the backend pool (1,000+ questions).
 - On their turn the active player verbally asks the displayed question to any opponent. Afterwards they can tap “Next Question” to pass the turn to the next player in clockwise order (as tracked by the app).
 - Players may open the in-app list of active locations at any time.
 
 ## 4. Making Guesses
-- Any player can press the “Guess” button at any time.
+- Any player can press the “Guess” button at any time; the control looks identical for imposters and non-imposters to avoid leaking roles.
   - If the player is a non-imposter, they must accuse a specific player of being the Imposter.
   - If the player is the Imposter, they must guess which location is in play.
 - The round ends immediately after a guess:
