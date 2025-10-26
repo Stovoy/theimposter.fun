@@ -1,0 +1,26 @@
+{$DOMAIN:-:80} {
+  encode gzip zstd
+
+  @api path /api/* /healthz
+  handle @api {
+    reverse_proxy backend:8080
+  }
+
+  handle {
+    root * /srv/static
+    try_files {path} /index.html
+    file_server
+  }
+
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubdomains; preload"
+    X-Content-Type-Options "nosniff"
+    X-Frame-Options "SAMEORIGIN"
+    Referrer-Policy "strict-origin-when-cross-origin"
+  }
+
+  log {
+    output stdout
+    format json
+  }
+}

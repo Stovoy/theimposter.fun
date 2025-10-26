@@ -1,0 +1,11 @@
+target/
+node_modules/
+dist/
+pkg/
+*.log
+.DS_Store
+**/*.rs.bk
+frontend/.svelte-kit/
+.idea/
+.vscode/
+*.env
