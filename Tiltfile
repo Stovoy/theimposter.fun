@@ -1,8 +1,8 @@
 def nvm_cmd(inner):
     return (
         "bash -lc '"
-        "export NVM_DIR=\"${NVM_DIR:-$HOME/.nvm}\"; "
-        "[ -s \"$NVM_DIR/nvm.sh\" ] && source \"$NVM_DIR/nvm.sh\"; "
+        + "export NVM_DIR=\"${NVM_DIR:-$HOME/.nvm}\"; "
+        + "[ -s \"$NVM_DIR/nvm.sh\" ] && source \"$NVM_DIR/nvm.sh\"; "
         + inner
         + "'"
     )
@@ -28,7 +28,7 @@ local_resource(
 
 local_resource(
     name='frontend-deps',
-    cmd=nvm_cmd('cd frontend && nvm use >/dev/null && npm install'),
+    cmd=nvm_cmd('cd frontend && nvm use >/dev/null && npm ci'),
     deps=['frontend/package.json', 'frontend/package-lock.json'],
 )
 
