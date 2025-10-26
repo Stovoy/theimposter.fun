@@ -131,7 +131,8 @@
             type="text"
             bind:value={createName}
             placeholder="Your name"
-            autocomplete="name"
+            autocomplete="off"
+            aria-autocomplete="none"
             required
           />
         </label>
@@ -224,7 +225,8 @@
             type="text"
             bind:value={joinName}
             placeholder="Your name"
-            autocomplete="name"
+            autocomplete="off"
+            aria-autocomplete="none"
             required
           />
         </label>
