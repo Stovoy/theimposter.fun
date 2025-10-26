@@ -2,20 +2,26 @@
   import { onMount } from 'svelte';
   import {
     createGame,
+    getCategories,
     getLobby,
     joinGame,
     updateRules,
     type CreateGameResponse,
     type GameLobby,
+    type GamePhase,
     type GameRules,
+    type PlayerSummary,
+    type RoundSummary,
   } from './lib/api';
 
   const SESSION_KEY = 'theimposter.session';
 
   const defaultRules: GameRules = {
-    max_players: 12,
+    max_players: 8,
     round_time_seconds: 120,
     allow_repeated_questions: false,
+    location_pool_size: 10,
+    question_categories: [],
   };
 
   let createName = '';
@@ -27,6 +33,8 @@
   let playerId: string | null = null;
   let loading = false;
   let notice: { type: 'success' | 'error'; message: string } | null = null;
+  let availableCategories: string[] = [];
+  let lastRoundSummary: string | null = null;
 
   type Session = {
     code: string;
@@ -64,7 +72,111 @@
     }, 3200);
   };
 
+  const phaseLabel = (phase: GamePhase) => {
+    switch (phase) {
+      case 'Lobby':
+        return 'Lobby';
+      case 'InRound':
+        return 'Round in progress';
+      case 'AwaitingNextRound':
+        return 'Ready for next round';
+      default:
+        return phase;
+    }
+  };
+
+  const formatCategory = (category: string) =>
+    category
+      .split('_')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+
+  const outcomeSummary = (summary: RoundSummary | null, players: PlayerSummary[]) => {
+    if (!summary) return null;
+    const roster = new Map(players.map((player) => [player.id, player.name]));
+    const { outcome, winner } = summary.resolution;
+
+    if ('CrewIdentifiedImposter' in outcome) {
+      const info = outcome.CrewIdentifiedImposter;
+      const accuser = roster.get(info.accuser) ?? 'Crew';
+      const impostor = roster.get(info.impostor) ?? 'the imposter';
+      return `${accuser} exposed ${impostor}. The crew scored a win.`;
+    }
+
+    if ('CrewMisdirected' in outcome) {
+      const info = outcome.CrewMisdirected;
+      const accuser = roster.get(info.accuser) ?? 'A crew member';
+      const accused = roster.get(info.accused) ?? 'someone innocent';
+      const impostor = roster.get(info.impostor) ?? 'the imposter';
+      return `${accuser} accused ${accused} and missed. ${impostor} stole the round.`;
+    }
+
+    if ('ImposterIdentifiedLocation' in outcome) {
+      const info = outcome.ImposterIdentifiedLocation;
+      const impostor = roster.get(info.impostor) ?? 'The imposter';
+      return `${impostor} guessed the location (${info.location_name}) and won the round.`;
+    }
+
+    if ('ImposterFailedLocationGuess' in outcome) {
+      const info = outcome.ImposterFailedLocationGuess;
+      const impostor = roster.get(info.impostor) ?? 'The imposter';
+      return `${impostor} guessed the wrong location. The crew held the line at ${info.actual_location_name}.`;
+    }
+
+    return winner === 'Crew' ? 'The crew took the round.' : 'The imposter claimed victory.';
+  };
+
+  const clampValue = (key: keyof GameRules, value: number) => {
+    if (key === 'max_players') return Math.min(Math.max(value, 3), 8);
+    if (key === 'round_time_seconds') return Math.min(Math.max(value, 30), 600);
+    if (key === 'location_pool_size') return Math.min(Math.max(value, 1), 15);
+    return value;
+  };
+
+  const normalizedCategories = () =>
+    Array.from(new Set(rules.question_categories.map((category) => category.toLowerCase())));
+
+  const toggleCategory = (category: string) => {
+    const normalized = category.toLowerCase();
+    const current = new Set(normalizedCategories());
+    if (current.has(normalized)) {
+      current.delete(normalized);
+    } else {
+      current.add(normalized);
+    }
+    rules = { ...rules, question_categories: Array.from(current) } as GameRules;
+  };
+
+  const isCategorySelected = (category: string) =>
+    normalizedCategories().includes(category.toLowerCase());
+
+  const ensureCategories = async () => {
+    try {
+      const categories = await getCategories();
+      availableCategories = categories;
+      if (rules.question_categories.length === 0) {
+        rules = {
+          ...rules,
+          question_categories: categories.slice(),
+        } as GameRules;
+      } else {
+        const filtered = normalizedCategories().filter((category) =>
+          categories.includes(category),
+        );
+        if (filtered.length !== rules.question_categories.length) {
+          rules = { ...rules, question_categories: filtered } as GameRules;
+        }
+      }
+    } catch (err) {
+      showNotice(
+        'error',
+        err instanceof Error ? err.message : 'Could not load question categories',
+      );
+    }
+  };
+
   onMount(async () => {
+    await ensureCategories();
     const session = loadSession();
     if (session) {
       hostToken = session.hostToken ?? null;
@@ -78,6 +190,14 @@
     try {
       lobby = await getLobby(code);
       rules = { ...lobby.rules };
+      if (availableCategories.length) {
+        const filtered = normalizedCategories().filter((category) =>
+          availableCategories.includes(category),
+        );
+        if (filtered.length !== rules.question_categories.length) {
+          rules = { ...rules, question_categories: filtered } as GameRules;
+        }
+      }
     } catch (err) {
       showNotice('error', err instanceof Error ? err.message : 'Unable to load lobby');
       lobby = null;
@@ -92,14 +212,19 @@
 
     loading = true;
     try {
+      const categories = normalizedCategories();
+      const payloadRules: GameRules = {
+        ...rules,
+        question_categories: categories.length ? categories : availableCategories,
+      };
       const created: CreateGameResponse = await createGame({
         host_name: createName.trim(),
-        rules,
+        rules: payloadRules,
       });
-      lobby = await getLobby(created.code);
       hostToken = created.host_token;
       playerId = created.player_id;
       joinCode = created.code;
+      await refreshLobby(created.code);
       saveSession({
         code: created.code,
         playerId: created.player_id,
@@ -141,6 +266,10 @@
     playerId = null;
     hostToken = null;
     clearSession();
+    rules = {
+      ...defaultRules,
+      question_categories: availableCategories.length ? availableCategories.slice() : [],
+    };
   };
 
   const handleRefresh = async () => {
@@ -148,15 +277,24 @@
     await refreshLobby(joinCode);
   };
 
-  const handleRuleChange = (key: keyof GameRules, value: number | boolean) => {
-    rules = { ...rules, [key]: value } as GameRules;
+  const handleRuleChange = (key: keyof GameRules, raw: number | boolean) => {
+    let next: number | boolean = raw;
+    if (typeof raw === 'number') {
+      next = clampValue(key, raw);
+    }
+    rules = { ...rules, [key]: next } as GameRules;
   };
 
   const submitRules = async () => {
     if (!lobby || !hostToken) return;
     loading = true;
     try {
-      lobby = await updateRules(lobby.code, hostToken, rules);
+      const categories = normalizedCategories();
+      lobby = await updateRules(lobby.code, hostToken, {
+        ...rules,
+        question_categories: categories.length ? categories : availableCategories,
+      });
+      rules = { ...lobby.rules };
       showNotice('success', 'Rules updated');
     } catch (err) {
       showNotice('error', err instanceof Error ? err.message : 'Could not update rules');
@@ -168,6 +306,7 @@
   $: joinCode = codeMask(joinCode);
   $: canEditRules = Boolean(hostToken && lobby && lobby.leader_id === playerId);
   $: isInLobby = Boolean(lobby && playerId);
+  $: lastRoundSummary = lobby ? outcomeSummary(lobby.last_round, lobby.players) : null;
 </script>
 
 <main class="page">
@@ -210,8 +349,8 @@
               Max players
               <input
                 type="number"
-                min="4"
-                max="16"
+                min="3"
+                max="8"
                 bind:value={rules.max_players}
                 on:change={(event) =>
                   handleRuleChange('max_players', Number(event.currentTarget.value))}
@@ -222,7 +361,7 @@
               <input
                 type="number"
                 min="30"
-                max="300"
+                max="600"
                 step="30"
                 bind:value={rules.round_time_seconds}
                 on:change={(event) =>
@@ -230,15 +369,46 @@
               />
             </label>
           </div>
-          <label class="checkbox">
-            <input
-              type="checkbox"
-              checked={rules.allow_repeated_questions}
-              on:change={(event) =>
-                handleRuleChange('allow_repeated_questions', event.currentTarget.checked)}
-            />
-            Allow repeated questions
-          </label>
+          <div class="field-row">
+            <label>
+              Location pool
+              <input
+                type="number"
+                min="1"
+                max="15"
+                bind:value={rules.location_pool_size}
+                on:change={(event) =>
+                  handleRuleChange('location_pool_size', Number(event.currentTarget.value))}
+              />
+              <span class="helper-text">Locations drawn at the start of the game.</span>
+            </label>
+            <label class="checkbox switch">
+              <input
+                type="checkbox"
+                checked={rules.allow_repeated_questions}
+                on:change={(event) =>
+                  handleRuleChange('allow_repeated_questions', event.currentTarget.checked)}
+              />
+              Allow repeated questions
+            </label>
+          </div>
+
+          {#if availableCategories.length}
+            <p class="category-header">Question categories</p>
+            <div class="category-list">
+              {#each availableCategories as category}
+                <label class="checkbox category-item">
+                  <input
+                    type="checkbox"
+                    checked={isCategorySelected(category)}
+                    on:change={() => toggleCategory(category)}
+                  />
+                  {formatCategory(category)}
+                </label>
+              {/each}
+            </div>
+            <p class="category-note">Deselect all to let the game choose from every category.</p>
+          {/if}
         </fieldset>
 
         <button class="primary" type="submit" disabled={loading}>
@@ -296,6 +466,7 @@
 
       <div class="chips">
         <span class="chip">Players: {lobby.player_count}/{lobby.rules.max_players}</span>
+        <span class="chip chip-muted">{phaseLabel(lobby.phase)}</span>
         {#if canEditRules}
           <span class="chip chip-accent">You&apos;re the host</span>
         {/if}
@@ -303,9 +474,19 @@
 
       <ul class="players">
         {#each lobby.players as player}
-          <li class:me={player.id === playerId}>{player.name}</li>
+          <li class:me={player.id === playerId}>
+            <span class="player-name">{player.name}</span>
+            <span class="player-wins">{player.crew_wins} crew · {player.imposter_wins} imp</span>
+          </li>
         {/each}
       </ul>
+
+      {#if lastRoundSummary}
+        <div class="last-round">
+          <h3>Last round</h3>
+          <p>{lastRoundSummary}</p>
+        </div>
+      {/if}
 
       {#if canEditRules}
         <form
@@ -318,8 +499,8 @@
               Max players
               <input
                 type="number"
-                min="4"
-                max="16"
+                min="3"
+                max="8"
                 bind:value={rules.max_players}
                 on:change={(event) =>
                   handleRuleChange('max_players', Number(event.currentTarget.value))}
@@ -330,7 +511,7 @@
               <input
                 type="number"
                 min="30"
-                max="300"
+                max="600"
                 step="30"
                 bind:value={rules.round_time_seconds}
                 on:change={(event) =>
@@ -338,15 +519,46 @@
               />
             </label>
           </div>
-          <label class="checkbox">
-            <input
-              type="checkbox"
-              checked={rules.allow_repeated_questions}
-              on:change={(event) =>
-                handleRuleChange('allow_repeated_questions', event.currentTarget.checked)}
-            />
-            Allow repeated questions
-          </label>
+          <div class="field-row">
+            <label>
+              Location pool
+              <input
+                type="number"
+                min="1"
+                max="15"
+                bind:value={rules.location_pool_size}
+                on:change={(event) =>
+                  handleRuleChange('location_pool_size', Number(event.currentTarget.value))}
+              />
+              <span class="helper-text">Locations drawn at the start of the game.</span>
+            </label>
+            <label class="checkbox switch">
+              <input
+                type="checkbox"
+                checked={rules.allow_repeated_questions}
+                on:change={(event) =>
+                  handleRuleChange('allow_repeated_questions', event.currentTarget.checked)}
+              />
+              Allow repeated questions
+            </label>
+          </div>
+
+          {#if availableCategories.length}
+            <p class="category-header">Question categories</p>
+            <div class="category-list">
+              {#each availableCategories as category}
+                <label class="checkbox category-item">
+                  <input
+                    type="checkbox"
+                    checked={isCategorySelected(category)}
+                    on:change={() => toggleCategory(category)}
+                  />
+                  {formatCategory(category)}
+                </label>
+              {/each}
+            </div>
+            <p class="category-note">Clear every category to allow any question.</p>
+          {/if}
           <button class="primary" type="submit" disabled={loading}>
             {loading ? 'Saving…' : 'Save rules'}
           </button>

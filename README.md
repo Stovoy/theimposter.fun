@@ -62,6 +62,21 @@ Production build:
 npm run build
 ```
 
+### Node.js version
+
+This repository ships with an `.nvmrc` file pointing at Node `22.12.0`. If you use [`nvm`](https://github.com/nvm-sh/nvm), run `nvm use` from the project root before invoking any Node tooling. The Tilt workflow (below) and the Vite dev server expect this runtime.
+
+### Iterating with Tilt
+
+[Tilt](https://tilt.dev) can orchestrate the backend (`cargo run`) and the Vite dev server with automatic reloads:
+
+1. Install Tilt (`brew install tilt` on macOS or follow the official docs).
+2. From the repo root, ensure dependencies are installed once: `nvm use` (loads Node 22.12.0), `cd backend && cargo fetch`, `cd frontend && npm install`.
+3. Run `tilt up` to start both services. Tilt watches the Rust sources, Svelte components, and static assets. Changes trigger automatic restarts/hot reloads.
+4. Access the backend at `http://localhost:8080` and the web client at `http://localhost:5173`. The Tilt UI (default `http://localhost:10350`) shows build logs and allows manual restarting.
+
+> If you prefer manual control, the resources `frontend-deps` and `backend-deps` inside Tilt install dependencies; they run automatically the first time and can be re-triggered from the UI when package manifests change.
+
 ### Docker Compose (local stack)
 
 The repository ships with a Compose setup that builds both images and runs Caddy in front of the API:

@@ -1,0 +1,197 @@
+[
+  {
+    "id": 1,
+    "name": "Coffee Shop",
+    "roles": [
+      "Barista",
+      "Freelancer",
+      "Manager",
+      "Tourist",
+      "Musician",
+      "Student",
+      "Health Inspector"
+    ]
+  },
+  {
+    "id": 2,
+    "name": "Space Station",
+    "roles": [
+      "Commander",
+      "Engineer",
+      "Biologist",
+      "Navigator",
+      "Communications Officer",
+      "Tourist",
+      "Security Chief"
+    ]
+  },
+  {
+    "id": 3,
+    "name": "Amusement Park",
+    "roles": [
+      "Ride Operator",
+      "Mascot Performer",
+      "Food Vendor",
+      "Photographer",
+      "Mechanic",
+      "Security Guard",
+      "Teenager"
+    ]
+  },
+  {
+    "id": 4,
+    "name": "Submarine",
+    "roles": [
+      "Captain",
+      "Sonar Technician",
+      "Chef",
+      "First Mate",
+      "Navigator",
+      "Medic",
+      "Marine Biologist"
+    ]
+  },
+  {
+    "id": 5,
+    "name": "Movie Set",
+    "roles": [
+      "Director",
+      "Lead Actor",
+      "Cinematographer",
+      "Makeup Artist",
+      "Stunt Double",
+      "Script Supervisor",
+      "Producer"
+    ]
+  },
+  {
+    "id": 6,
+    "name": "Haunted House",
+    "roles": [
+      "Caretaker",
+      "Ghost Tour Guide",
+      "Paranormal Investigator",
+      "Historian",
+      "Thrill Seeker",
+      "Photographer",
+      "Security Guard"
+    ]
+  },
+  {
+    "id": 7,
+    "name": "Music Festival",
+    "roles": [
+      "Headliner",
+      "Sound Engineer",
+      "Vendor",
+      "Medic",
+      "Volunteer",
+      "Photographer",
+      "VIP"
+    ]
+  },
+  {
+    "id": 8,
+    "name": "Archaeological Dig",
+    "roles": [
+      "Lead Archaeologist",
+      "Graduate Student",
+      "Local Guide",
+      "Photographer",
+      "Geologist",
+      "Historian",
+      "Conservationist"
+    ]
+  },
+  {
+    "id": 9,
+    "name": "Cruise Ship",
+    "roles": [
+      "Captain",
+      "Cruise Director",
+      "Chef",
+      "Entertainer",
+      "Housekeeper",
+      "Passenger",
+      "Security Officer"
+    ]
+  },
+  {
+    "id": 10,
+    "name": "Art Museum",
+    "roles": [
+      "Curator",
+      "Tour Guide",
+      "Security Guard",
+      "Restorer",
+      "Visitor",
+      "Archivist",
+      "Intern"
+    ]
+  },
+  {
+    "id": 11,
+    "name": "Ski Resort",
+    "roles": [
+      "Ski Instructor",
+      "Lift Operator",
+      "Snowboarder",
+      "Lodge Manager",
+      "Chef",
+      "Vacationer",
+      "Patrol"
+    ]
+  },
+  {
+    "id": 12,
+    "name": "Underwater Research Lab",
+    "roles": [
+      "Lead Scientist",
+      "Diver",
+      "Marine Biologist",
+      "Engineer",
+      "Communications Specialist",
+      "Medic",
+      "Intern"
+    ]
+  },
+  {
+    "id": 13,
+    "name": "National Park",
+    "roles": [
+      "Park Ranger",
+      "Camper",
+      "Wildlife Photographer",
+      "Botanist",
+      "Tour Guide",
+      "Geologist",
+      "Trail Runner"
+    ]
+  },
+  {
+    "id": 14,
+    "name": "Airport Terminal",
+    "roles": [
+      "Pilot",
+      "Flight Attendant",
+      "Security Agent",
+      "Business Traveler",
+      "Air Traffic Controller",
+      "Ground Crew",
+      "Tourist"
+    ]
+  },
+  {
+    "id": 15,
+    "name": "Deep Space Relay Station",
+    "roles": [
+      "Communications Officer",
+      "Systems Engineer",
+      "Astrophysicist",
+      "Technician",
+      "Visitor",
+      "Logistics Coordinator",
+      "Security Chief"
+    ]
+  }
+]

@@ -1,0 +1,102 @@
+[
+  {
+    "id": "q001",
+    "text": "What is the first thing you notice when you arrive here?",
+    "categories": ["general", "observation"]
+  },
+  {
+    "id": "q002",
+    "text": "How long have you been working your role today?",
+    "categories": ["roles", "time"]
+  },
+  {
+    "id": "q003",
+    "text": "What kind of outfit would you expect to wear right now?",
+    "categories": ["appearance", "roles"]
+  },
+  {
+    "id": "q004",
+    "text": "If you had a break, where would you go?",
+    "categories": ["breaks", "location"]
+  },
+  {
+    "id": "q005",
+    "text": "What is the biggest challenge you have to handle here?",
+    "categories": ["challenge", "roles"]
+  },
+  {
+    "id": "q006",
+    "text": "What sounds are you hearing around you right now?",
+    "categories": ["senses", "observation"]
+  },
+  {
+    "id": "q007",
+    "text": "Do you interact with visitors or mainly coworkers?",
+    "categories": ["interaction", "general"]
+  },
+  {
+    "id": "q008",
+    "text": "What time of day is busiest for you?",
+    "categories": ["time", "roles"]
+  },
+  {
+    "id": "q009",
+    "text": "What special equipment do you rely on?",
+    "categories": ["tools", "roles"]
+  },
+  {
+    "id": "q010",
+    "text": "Are you indoors, outdoors, or somewhere in between?",
+    "categories": ["location", "observation"]
+  },
+  {
+    "id": "q011",
+    "text": "How would you describe the lighting where you are?",
+    "categories": ["senses", "observation"]
+  },
+  {
+    "id": "q012",
+    "text": "Who is responsible for keeping things safe here?",
+    "categories": ["safety", "roles"]
+  },
+  {
+    "id": "q013",
+    "text": "Is food a big part of your day here?",
+    "categories": ["food", "general"]
+  },
+  {
+    "id": "q014",
+    "text": "What do you do when something unexpected happens?",
+    "categories": ["emergency", "roles"]
+  },
+  {
+    "id": "q015",
+    "text": "How long does it take to get here from home?",
+    "categories": ["commute", "general"]
+  },
+  {
+    "id": "q016",
+    "text": "Do you ever need to travel as part of this role?",
+    "categories": ["travel", "roles"]
+  },
+  {
+    "id": "q017",
+    "text": "What kind of people do you usually meet here?",
+    "categories": ["people", "general"]
+  },
+  {
+    "id": "q018",
+    "text": "Is there a uniform or dress code involved?",
+    "categories": ["appearance", "roles"]
+  },
+  {
+    "id": "q019",
+    "text": "What do you look forward to most during your time here?",
+    "categories": ["positive", "general"]
+  },
+  {
+    "id": "q020",
+    "text": "What kind of weather would make this place difficult?",
+    "categories": ["weather", "location"]
+  }
+]
