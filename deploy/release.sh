@@ -7,12 +7,12 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 1
 fi
 
-: "${REGISTRY:?Set REGISTRY to the target registry (e.g., registry.digitalocean.com/theimposter)}"
-: "${SSH_HOST:?Set SSH_HOST to the droplet hostname or IP}"
+REGISTRY="${REGISTRY:-ghcr.io/stovoy/theimposter.fun}"
+SSH_HOST="${SSH_HOST:-theimposter.fun}"
 SSH_USER="${SSH_USER:-root}"
 IMAGE_TAG="${IMAGE_TAG:-$(git rev-parse --short HEAD)}"
 PLATFORM="${PLATFORM:-linux/amd64}"
-DEPLOY_PATH="${DEPLOY_PATH:-/opt/theimposter}"
+DEPLOY_PATH="${DEPLOY_PATH:-/root/theimposter.fun}"
 DOMAIN="${DOMAIN:-theimposter.fun}"
 
 echo "Building backend image ${REGISTRY}/backend:${IMAGE_TAG}..."

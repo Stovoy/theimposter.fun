@@ -1,4 +1,4 @@
-FROM rust:1.82 as builder
+FROM rustlang/rust:nightly AS builder
 
 WORKDIR /app
 
@@ -10,7 +10,7 @@ COPY src ./src
 COPY data ./data
 RUN cargo build --locked --release && strip target/release/theimposter-backend
 
-FROM debian:bookworm-slim as runtime
+FROM debian:bookworm-slim AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
 RUN useradd --create-home --uid 10001 app
