@@ -19,7 +19,28 @@
   $: route = $router;
   $: state = $gameSession;
 
+  const syncRouteWithSession = () => {
+    if (state.status !== 'ready') return;
+
+    const lobbyCode = state.lobby?.code ?? state.session?.code ?? null;
+    const inRoundPhase = state.lobby?.phase === 'InRound';
+
+    if (state.round && route.name !== 'round' && route.name !== 'scoreboard' && lobbyCode) {
+      router.replace('round', { code: lobbyCode });
+      return;
+    }
+
+    if (route.name === 'round' && (!state.round || !inRoundPhase)) {
+      if (lobbyCode) {
+        router.replace('lobby', { code: lobbyCode });
+      } else {
+        router.replace('landing');
+      }
+    }
+  };
+
   $: managePolling(route.name, Boolean(state.session));
+  $: syncRouteWithSession();
 
   const managePolling = (routeName: RouteName, hasSession: boolean) => {
     const shouldLobbyPoll = hasSession && routeName !== 'landing';

@@ -391,6 +391,9 @@ export const createGameSessionStore = () => {
       updateState((state) => ({ ...state, syncingLobby: true }));
     }
 
+    const previousPhase = currentState.lobby?.phase;
+    const hadRound = Boolean(currentState.round);
+
     try {
       const lobby = await getLobby(session.code);
       updateState((state) => ({
@@ -401,6 +404,20 @@ export const createGameSessionStore = () => {
         lastError: null,
         lastLobbyError: null,
       }));
+      const shouldResetRound =
+        (hadRound && lobby.phase === "Lobby") ||
+        (previousPhase === "InRound" && lobby.phase !== "InRound");
+
+      if (lobby.phase === "InRound") {
+        await refreshRound({ silent: true }).catch(() => {
+          // handled by refreshRound
+        });
+        if (!currentState.realtimeConnected) {
+          startRoundPolling();
+        }
+      } else if (shouldResetRound) {
+        resetRoundState();
+      }
       return lobby;
     } catch (err) {
       const message = errorMessage(err);
