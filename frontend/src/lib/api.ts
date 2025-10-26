@@ -155,26 +155,60 @@ interface ApiErrorBody {
   message?: string;
 }
 
+interface RequestError extends Error {
+  status?: number;
+  code?: "offline" | "network" | "http_error" | "not_found" | "conflict";
+}
+
 async function request<T>(path: string, init: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: {
-      "content-type": "application/json",
-      ...(init.headers ?? {}),
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      headers: {
+        "content-type": "application/json",
+        ...(init.headers ?? {}),
+      },
+    });
+  } catch {
+    const offline = typeof navigator !== "undefined" && navigator.onLine === false;
+    const error: RequestError = new Error(
+      offline
+        ? "You appear to be offline. Check your connection and try again."
+        : "Unable to reach the server. Please retry shortly.",
+    );
+    error.code = offline ? "offline" : "network";
+    throw error;
+  }
 
   if (!response.ok) {
-    let message = response.statusText;
+    let message = response.statusText || "Request failed";
+    let bodyMessage: string | undefined;
     try {
       const body = (await response.json()) as ApiErrorBody;
-      if (body?.message) {
+      if (body?.message && body.message.trim().length) {
         message = body.message;
+        bodyMessage = body.message;
       }
     } catch {
       // ignore JSON parsing errors
     }
-    throw new Error(message);
+    const error: RequestError = new Error(message);
+    error.status = response.status;
+    if (response.status === 404) {
+      error.code = "not_found";
+      if (!bodyMessage) {
+        error.message = "Lobby not found. Double-check the code.";
+      }
+    } else if (response.status === 409) {
+      error.code = "conflict";
+      if (!bodyMessage) {
+        error.message = "This lobby is full. Ask the host to make space or start a new one.";
+      }
+    } else {
+      error.code = "http_error";
+    }
+    throw error;
   }
 
   if (response.status === 204) {

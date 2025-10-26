@@ -14,6 +14,7 @@
   let draftRules: GameRules = { ...defaultRules };
   let primedCategories = false;
   let loading = false;
+  let joinError: string | null = null;
 
   $: sessionState = $gameSession;
   $: availableCategories = sessionState.categories;
@@ -82,15 +83,17 @@
     const code = codeMask(joinCode);
     if (!joinName.trim() || code.length !== 4) {
       gameSession.pushToast('error', 'Add your name and a 4-letter code');
+      joinError = 'Add your name and a 4-letter code.';
       return;
     }
 
     loading = true;
+    joinError = null;
     try {
       await gameSession.joinLobby(code, joinName.trim());
       router.replace('lobby', { code });
-    } catch {
-      // handled by toast store
+    } catch (err) {
+      joinError = err instanceof Error ? err.message : 'Unable to join the lobby.';
     } finally {
       loading = false;
     }
@@ -239,6 +242,14 @@
         <button type="submit" class="primary outline" disabled={loading}>
           {loading ? 'Joining…' : 'Join lobby'}
         </button>
+        {#if joinError}
+          <div class="inline-error">
+            <p>{joinError}</p>
+            <button type="button" class="ghost small" on:click={handleJoin} disabled={loading}>
+              Retry join
+            </button>
+          </div>
+        {/if}
       </form>
     </article>
   </div>
@@ -276,5 +287,21 @@
     .grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+  }
+
+  .inline-error {
+    margin-top: 14px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(248, 113, 113, 0.35);
+    background: rgba(248, 113, 113, 0.12);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    color: rgba(248, 113, 113, 0.9);
+  }
+
+  .inline-error p {
+    margin: 0;
   }
 </style>

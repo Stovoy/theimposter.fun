@@ -61,7 +61,13 @@ export interface GameClientState {
   pendingActions: number;
   lastError: string | null;
   toasts: Toast[];
+  isOnline: boolean;
+  offlineSince: number | null;
+  lastLobbyError: string | null;
 }
+
+const detectOnline = () =>
+  typeof navigator !== "undefined" ? navigator.onLine : true;
 
 const initialState: GameClientState = {
   status: "idle",
@@ -78,6 +84,9 @@ const initialState: GameClientState = {
   pendingActions: 0,
   lastError: null,
   toasts: [],
+  isOnline: detectOnline(),
+  offlineSince: detectOnline() ? null : Date.now(),
+  lastLobbyError: null,
 };
 
 const canUseStorage =
@@ -125,6 +134,20 @@ export const createGameSessionStore = () => {
   const updateState = (fn: (state: GameClientState) => GameClientState) => {
     internal.update((state) => fn(state));
   };
+
+  const updateOnlineStatus = (isOnline: boolean) => {
+    updateState((state) => ({
+      ...state,
+      isOnline,
+      offlineSince: isOnline ? null : state.offlineSince ?? Date.now(),
+    }));
+  };
+
+  if (typeof window !== "undefined") {
+    updateOnlineStatus(detectOnline());
+    window.addEventListener("online", () => updateOnlineStatus(true));
+    window.addEventListener("offline", () => updateOnlineStatus(false));
+  }
 
   const setStatus = (status: ClientStatus) => {
     updateState((state) => ({ ...state, status }));
@@ -199,17 +222,19 @@ export const createGameSessionStore = () => {
         syncingLobby: false,
         lastLobbySyncMs: Date.now(),
         lastError: null,
+        lastLobbyError: null,
       }));
       return lobby;
     } catch (err) {
       const message = errorMessage(err);
       if (!silent) {
-        pushToast("error", message);
+        pushToast("error", message, true);
       }
       updateState((state) => ({
         ...state,
         syncingLobby: false,
         lastError: message,
+        lastLobbyError: message,
       }));
       throw err;
     }
@@ -368,7 +393,7 @@ export const createGameSessionStore = () => {
       pushToast("success", "Joined lobby successfully");
       startLobbyPolling();
       return response;
-    });
+    }, { persistentErrors: true });
   };
 
   const leaveSession = () => {
@@ -379,6 +404,8 @@ export const createGameSessionStore = () => {
       ...initialState,
       categories: state.categories,
       status: "ready",
+      isOnline: state.isOnline,
+      offlineSince: state.offlineSince,
     }));
   };
 
@@ -526,13 +553,16 @@ export const createGameSessionStore = () => {
     });
   };
 
-  const withAction = async <T>(fn: () => Promise<T>) => {
+  const withAction = async <T>(
+    fn: () => Promise<T>,
+    options?: { persistentErrors?: boolean },
+  ) => {
     setPending(1);
     try {
       return await fn();
     } catch (err) {
       const message = errorMessage(err);
-      pushToast("error", message);
+      pushToast("error", message, options?.persistentErrors);
       updateState((state) => ({ ...state, lastError: message }));
       throw err;
     } finally {

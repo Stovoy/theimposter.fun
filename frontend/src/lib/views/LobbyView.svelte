@@ -97,6 +97,14 @@
     router.replace('landing');
   };
 
+  const retryLobbyFetch = async () => {
+    try {
+      await gameSession.refreshLobby();
+    } catch {
+      // toast already surfaced
+    }
+  };
+
   const openModal = (modal: 'role' | 'locations') => {
     router.openModal(modal);
   };
@@ -119,6 +127,20 @@
 
 {#if lobby}
   <section class="lobby-layout">
+    {#if state.lastLobbyError}
+      <div class="inline-error">
+        <p>{state.lastLobbyError}</p>
+        <button
+          type="button"
+          class="ghost small"
+          disabled={state.syncingLobby}
+          on:click={retryLobbyFetch}
+        >
+          {state.syncingLobby ? 'Retrying…' : 'Retry sync'}
+        </button>
+      </div>
+    {/if}
+
     <header class="lobby-header">
       <div>
         <h1>Lobby {lobby.code}</h1>
@@ -478,6 +500,22 @@
   .small {
     padding: 10px 12px;
     font-size: 0.85rem;
+  }
+
+  .inline-error {
+    padding: 12px 16px;
+    border-radius: 14px;
+    border: 1px solid rgba(248, 113, 113, 0.35);
+    background: rgba(248, 113, 113, 0.12);
+    color: rgba(248, 113, 113, 0.9);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .inline-error p {
+    margin: 0;
   }
 
   .empty {

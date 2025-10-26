@@ -62,6 +62,13 @@
 
 <ToastHost />
 
+{#if !state.isOnline}
+  <div class="offline-banner" role="status" aria-live="polite">
+    <strong>Offline.</strong>
+    <span>Reconnect to resume syncing. We&apos;ll retry automatically.</span>
+  </div>
+{/if}
+
 <main class="page">
   {#if state.status !== 'ready'}
     <section class="loading">
@@ -130,5 +137,18 @@
     to {
       transform: rotate(360deg);
     }
+  }
+
+  .offline-banner {
+    margin: 0 auto 18px;
+    padding: 12px 18px;
+    max-width: 960px;
+    border-radius: 14px;
+    border: 1px solid rgba(248, 113, 113, 0.3);
+    background: rgba(248, 113, 113, 0.1);
+    color: rgba(248, 113, 113, 0.9);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
   }
 </style>
