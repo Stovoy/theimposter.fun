@@ -6,6 +6,7 @@
     getLobby,
     joinGame,
     updateRules,
+    setReady,
     type CreateGameResponse,
     type GameLobby,
     type GamePhase,
@@ -32,9 +33,14 @@
   let hostToken: string | null = null;
   let playerId: string | null = null;
   let loading = false;
+  let readying = false;
   let notice: { type: 'success' | 'error'; message: string } | null = null;
   let availableCategories: string[] = [];
   let lastRoundSummary: string | null = null;
+  let currentPlayer: PlayerSummary | null = null;
+  let playerReady = false;
+  let readyCount = 0;
+  let everyoneReady = false;
 
   type Session = {
     code: string;
@@ -277,6 +283,29 @@
     await refreshLobby(joinCode);
   };
 
+  const toggleReady = async () => {
+    if (!lobby || !playerId || lobby.phase === 'InRound') {
+      return;
+    }
+
+    readying = true;
+    try {
+      const updated = await setReady(lobby.code, {
+        player_id: playerId,
+        is_ready: !playerReady,
+      });
+      lobby = updated;
+      rules = { ...updated.rules };
+    } catch (err) {
+      showNotice(
+        'error',
+        err instanceof Error ? err.message : 'Could not update ready status',
+      );
+    } finally {
+      readying = false;
+    }
+  };
+
   const handleRuleChange = (key: keyof GameRules, raw: number | boolean) => {
     let next: number | boolean = raw;
     if (typeof raw === 'number') {
@@ -306,6 +335,11 @@
   $: joinCode = codeMask(joinCode);
   $: canEditRules = Boolean(hostToken && lobby && lobby.leader_id === playerId);
   $: isInLobby = Boolean(lobby && playerId);
+  $: currentPlayer =
+    lobby && playerId ? lobby.players.find((player) => player.id === playerId) ?? null : null;
+  $: playerReady = currentPlayer?.is_ready ?? false;
+  $: readyCount = lobby?.ready_player_count ?? 0;
+  $: everyoneReady = lobby?.all_players_ready ?? false;
   $: lastRoundSummary = lobby ? outcomeSummary(lobby.last_round, lobby.players) : null;
 </script>
 
@@ -466,6 +500,9 @@
 
       <div class="chips">
         <span class="chip">Players: {lobby.player_count}/{lobby.rules.max_players}</span>
+        <span class="chip chip-ready" class:chip-accent={everyoneReady}>
+          Ready: {readyCount}/{lobby.player_count}
+        </span>
         <span class="chip chip-muted">{phaseLabel(lobby.phase)}</span>
         {#if canEditRules}
           <span class="chip chip-accent">You&apos;re the host</span>
@@ -474,9 +511,16 @@
 
       <ul class="players">
         {#each lobby.players as player}
-          <li class:me={player.id === playerId}>
+          <li class:me={player.id === playerId} class:ready={player.is_ready}>
             <span class="player-name">{player.name}</span>
             <span class="player-wins">{player.crew_wins} crew · {player.imposter_wins} imp</span>
+            <span
+              class="player-status"
+              class:ready={player.is_ready}
+              class:waiting={!player.is_ready}
+            >
+              {player.is_ready ? 'Ready' : 'Waiting'}
+            </span>
           </li>
         {/each}
       </ul>
@@ -565,7 +609,19 @@
         </form>
       {/if}
 
-      <button class="ghost" type="button" on:click={handleLeave}>Leave lobby</button>
+      <div class="lobby-actions">
+        {#if lobby.phase !== 'InRound'}
+          <button
+            class="secondary"
+            type="button"
+            disabled={readying}
+            on:click={toggleReady}
+          >
+            {readying ? 'Updating…' : playerReady ? 'Cancel ready' : 'Ready up'}
+          </button>
+        {/if}
+        <button class="ghost" type="button" on:click={handleLeave}>Leave lobby</button>
+      </div>
     </section>
   {/if}
 </main>

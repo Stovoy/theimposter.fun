@@ -270,6 +270,11 @@ button {
   color: #bfdbfe;
 }
 
+.chip-ready {
+  background: rgba(16, 185, 129, 0.22);
+  color: #6ee7b7;
+}
+
 .chip-accent {
   background: rgba(16, 185, 129, 0.25);
   color: #6ee7b7;
@@ -307,6 +312,11 @@ button {
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
 }
 
+.players li.ready {
+  border-color: rgba(16, 185, 129, 0.45);
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.22);
+}
+
 .rules {
   display: flex;
   flex-direction: column;
@@ -320,6 +330,27 @@ button {
 .player-wins {
   font-size: 0.75rem;
   color: rgba(148, 163, 184, 0.85);
+}
+
+.player-status {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.player-status.ready {
+  color: #34d399;
+}
+
+.player-status.waiting {
+  color: #facc15;
+}
+
+.lobby-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
 }
 
 .last-round {

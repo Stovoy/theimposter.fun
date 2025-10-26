@@ -647,7 +647,9 @@ fn app_router(state: SharedState) -> Router {
             get(fetch_game_details).patch(update_rules),
         )
         .route("/api/games/:code/join", post(join_game))
+        .route("/api/games/:code/ready", post(update_ready_state))
         .route("/api/games/:code/start", post(start_game))
+        .route("/api/games/:code/abort", post(abort_game))
         .route("/api/games/:code/round", get(get_round_state))
         .route("/api/games/:code/round/question", post(draw_next_question))
         .route("/api/games/:code/round/guess", post(submit_guess))
@@ -748,6 +750,8 @@ impl Game {
                 .map(PlayerSummary::from)
                 .collect(),
             player_count: self.players.len() as u32,
+            ready_player_count: self.ready_count() as u32,
+            all_players_ready: self.all_players_ready(),
             created_at_ms: timestamp_ms(self.created_at),
             phase: self.phase,
             last_round: self.last_round.clone(),
@@ -766,6 +770,38 @@ impl Game {
         if !self.players.contains_key(player_id) {
             return Err(AppError::Forbidden("player not part of this game".into()));
         }
+        Ok(())
+    }
+
+    fn ready_count(&self) -> usize {
+        self.players.values().filter(|player| player.ready).count()
+    }
+
+    fn all_players_ready(&self) -> bool {
+        !self.players.is_empty() && self.players.values().all(|player| player.ready)
+    }
+
+    fn reset_ready_states(&mut self) {
+        for player in self.players.values_mut() {
+            player.ready = false;
+        }
+    }
+
+    fn set_player_ready(&mut self, player_id: Uuid, ready: bool) -> Result<(), AppError> {
+        match self.phase {
+            GamePhase::Lobby | GamePhase::AwaitingNextRound => {}
+            GamePhase::InRound => {
+                return Err(AppError::BadRequest(
+                    "cannot update ready status during an active round".into(),
+                ));
+            }
+        }
+
+        let player = self
+            .players
+            .get_mut(&player_id)
+            .ok_or_else(|| AppError::Forbidden("player not part of this game".into()))?;
+        player.ready = ready;
         Ok(())
     }
 
@@ -813,6 +849,12 @@ impl Game {
         if self.players.len() < 3 {
             return Err(AppError::BadRequest(
                 "at least three players are required to start".into(),
+            ));
+        }
+
+        if !self.all_players_ready() {
+            return Err(AppError::BadRequest(
+                "players must ready up before starting".into(),
             ));
         }
 
@@ -872,6 +914,7 @@ impl Game {
         self.round_counter = next_round_number;
         self.phase = GamePhase::InRound;
         self.current_round = Some(round);
+        self.reset_ready_states();
         if let Some(current) = &self.current_round {
             self.used_location_ids.insert(selected_id);
             self.last_round = None;
@@ -900,6 +943,39 @@ impl Game {
             next_turn_player_id: next_player,
             asked_total,
         })
+    }
+
+    fn abort(&mut self, scope: AbortScope) -> Result<GameLobby, AppError> {
+        match scope {
+            AbortScope::Round => {
+                if self.phase != GamePhase::InRound {
+                    return Err(AppError::BadRequest(
+                        "no active round is currently running".into(),
+                    ));
+                }
+                if let Some(current) = self.current_round.as_ref() {
+                    self.used_location_ids.remove(&current.location.id);
+                }
+                self.current_round = None;
+                self.phase = GamePhase::AwaitingNextRound;
+                self.reset_ready_states();
+            }
+            AbortScope::Game => {
+                if let Some(current) = self.current_round.as_ref() {
+                    self.used_location_ids.remove(&current.location.id);
+                }
+                self.current_round = None;
+                self.phase = GamePhase::Lobby;
+                self.last_round = None;
+                self.reset_ready_states();
+                self.round_counter = 0;
+                self.location_pool.clear();
+                self.used_location_ids.clear();
+                self.round_history.clear();
+            }
+        }
+
+        Ok(self.lobby_view())
     }
 
     fn submit_guess(
@@ -940,6 +1016,7 @@ impl Game {
         self.last_round = Some(summary.clone());
         self.round_history.push(summary);
         self.phase = GamePhase::AwaitingNextRound;
+        self.reset_ready_states();
         Ok(resolution)
     }
 }
@@ -958,6 +1035,8 @@ struct GameLobby {
     rules: GameRules,
     players: Vec<PlayerSummary>,
     player_count: u32,
+    ready_player_count: u32,
+    all_players_ready: bool,
     created_at_ms: u64,
     phase: GamePhase,
     last_round: Option<RoundSummary>,
@@ -1015,6 +1094,7 @@ struct PlayerSummary {
     name: String,
     crew_wins: u32,
     imposter_wins: u32,
+    is_ready: bool,
 }
 
 impl From<Player> for PlayerSummary {
@@ -1024,6 +1104,7 @@ impl From<Player> for PlayerSummary {
             name: value.name,
             crew_wins: value.wins.crew,
             imposter_wins: value.wins.imposter,
+            is_ready: value.ready,
         }
     }
 }
@@ -1033,6 +1114,7 @@ struct Player {
     id: Uuid,
     name: String,
     wins: PlayerWins,
+    ready: bool,
 }
 
 impl Player {
@@ -1045,6 +1127,7 @@ impl Player {
             id: Uuid::new_v4(),
             name: trimmed.to_owned(),
             wins: PlayerWins::default(),
+            ready: false,
         })
     }
 }
@@ -1128,6 +1211,32 @@ struct StartGameRequest {
 }
 
 #[derive(Deserialize)]
+struct ReadyRequest {
+    player_id: Uuid,
+    is_ready: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum AbortScope {
+    Round,
+    Game,
+}
+
+impl Default for AbortScope {
+    fn default() -> Self {
+        Self::Round
+    }
+}
+
+#[derive(Deserialize)]
+struct AbortRequest {
+    host_token: Uuid,
+    #[serde(default)]
+    scope: AbortScope,
+}
+
+#[derive(Deserialize)]
 struct NextQuestionRequest {
     player_id: Uuid,
 }
@@ -1185,6 +1294,7 @@ async fn join_game(
     let player = Player::new(payload.player_name)?;
     let player_id = player.id;
     game.players.insert(player_id, player);
+    game.reset_ready_states();
 
     Ok((StatusCode::OK, Json(JoinGameResponse { player_id, code })))
 }
@@ -1204,6 +1314,21 @@ async fn start_game(
     game.ensure_host(&payload.host_token)?;
     let public_state = game.begin_round(content.as_ref())?;
     Ok((StatusCode::OK, Json(public_state)))
+}
+
+async fn update_ready_state(
+    State(state): State<SharedState>,
+    Path(code): Path<String>,
+    Json(payload): Json<ReadyRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let code = RoomCode::new(code)?;
+    let mut games = state.games.write().await;
+    let game = games
+        .get_mut(&code)
+        .ok_or_else(|| AppError::NotFound("game not found".into()))?;
+
+    game.set_player_ready(payload.player_id, payload.is_ready)?;
+    Ok((StatusCode::OK, Json(game.lobby_view())))
 }
 
 #[derive(Deserialize)]
@@ -1229,6 +1354,7 @@ async fn update_rules(
 
     let content = state.content();
     game.rules = payload.rules.normalize(&content)?;
+    game.reset_ready_states();
     Ok((StatusCode::OK, Json(game.lobby_view())))
 }
 
@@ -1314,6 +1440,22 @@ async fn start_next_round(
     game.ensure_host(&payload.host_token)?;
     let public_state = game.begin_round(content.as_ref())?;
     Ok((StatusCode::OK, Json(public_state)))
+}
+
+async fn abort_game(
+    State(state): State<SharedState>,
+    Path(code): Path<String>,
+    Json(payload): Json<AbortRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let code = RoomCode::new(code)?;
+    let mut games = state.games.write().await;
+    let game = games
+        .get_mut(&code)
+        .ok_or_else(|| AppError::NotFound("game not found".into()))?;
+
+    game.ensure_host(&payload.host_token)?;
+    let lobby = game.abort(payload.scope)?;
+    Ok((StatusCode::OK, Json(lobby)))
 }
 
 async fn get_assignment(
@@ -1415,7 +1557,7 @@ impl IntoResponse for AppError {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct ErrorResponse {
     message: String,
 }
@@ -1530,6 +1672,301 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn players_must_ready_before_start() {
+        let content = GameContent::load().expect("content should load");
+        let state = Arc::new(AppState::new(content));
+        let app = super::app_router(state.clone());
+
+        let create_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/games")
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({ "host_name": "Alice" }).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(create_response.status(), StatusCode::CREATED);
+        let body = axum::body::to_bytes(create_response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let created: CreateGameResponse = serde_json::from_slice(&body).unwrap();
+        let code = format!("{}", created.code);
+        let host_token = created.host_token;
+
+        let mut player_ids = vec![created.player_id];
+        for name in ["Bob", "Cara"] {
+            let join_uri = format!("/api/games/{}/join", code);
+            let join_response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(&join_uri)
+                        .header("content-type", "application/json")
+                        .body(Body::from(json!({ "player_name": name }).to_string()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(join_response.status(), StatusCode::OK);
+            let join_body = axum::body::to_bytes(join_response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let joined: JoinGameResponse = serde_json::from_slice(&join_body).unwrap();
+            player_ids.push(joined.player_id);
+        }
+
+        let start_uri = format!("/api/games/{}/start", code);
+        let start_attempt = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(&start_uri)
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({ "host_token": host_token }).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(start_attempt.status(), StatusCode::BAD_REQUEST);
+        let attempt_body = axum::body::to_bytes(start_attempt.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let error: ErrorResponse = serde_json::from_slice(&attempt_body).unwrap();
+        assert!(
+            error.message.contains("players must ready up"),
+            "unexpected error message: {}",
+            error.message
+        );
+
+        for player_id in &player_ids {
+            let ready_uri = format!("/api/games/{}/ready", code);
+            let ready_response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(&ready_uri)
+                        .header("content-type", "application/json")
+                        .body(Body::from(
+                            json!({
+                                "player_id": player_id,
+                                "is_ready": true
+                            })
+                            .to_string(),
+                        ))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(ready_response.status(), StatusCode::OK);
+        }
+
+        let start_success = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(&start_uri)
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({ "host_token": host_token }).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(start_success.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn host_can_abort_round_and_reset_ready_states() {
+        let content = GameContent::load().expect("content should load");
+        let state = Arc::new(AppState::new(content));
+        let app = super::app_router(state.clone());
+
+        let create_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/games")
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({ "host_name": "Alice" }).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(create_response.status(), StatusCode::CREATED);
+        let body = axum::body::to_bytes(create_response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let created: CreateGameResponse = serde_json::from_slice(&body).unwrap();
+        let code = format!("{}", created.code);
+        let host_token = created.host_token;
+
+        let mut player_ids = vec![created.player_id];
+        for name in ["Bob", "Cara"] {
+            let join_uri = format!("/api/games/{}/join", code);
+            let join_response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(&join_uri)
+                        .header("content-type", "application/json")
+                        .body(Body::from(json!({ "player_name": name }).to_string()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(join_response.status(), StatusCode::OK);
+            let join_body = axum::body::to_bytes(join_response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let joined: JoinGameResponse = serde_json::from_slice(&join_body).unwrap();
+            player_ids.push(joined.player_id);
+        }
+
+        for player_id in &player_ids {
+            let ready_uri = format!("/api/games/{}/ready", code);
+            let ready_response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(&ready_uri)
+                        .header("content-type", "application/json")
+                        .body(Body::from(
+                            json!({
+                                "player_id": player_id,
+                                "is_ready": true
+                            })
+                            .to_string(),
+                        ))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(ready_response.status(), StatusCode::OK);
+        }
+
+        let start_uri = format!("/api/games/{}/start", code);
+        let start_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(&start_uri)
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({ "host_token": host_token }).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(start_response.status(), StatusCode::OK);
+
+        let abort_uri = format!("/api/games/{}/abort", code);
+        let abort_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(&abort_uri)
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "host_token": host_token,
+                            "scope": "round"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(abort_response.status(), StatusCode::OK);
+        let abort_body = axum::body::to_bytes(abort_response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let lobby: GameLobby = serde_json::from_slice(&abort_body).unwrap();
+        assert_eq!(lobby.phase, GamePhase::AwaitingNextRound);
+        assert_eq!(lobby.ready_player_count, 0);
+        assert!(!lobby.all_players_ready);
+
+        let round_uri = format!("/api/games/{}/round", code);
+        let round_fetch = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(&round_uri)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(round_fetch.status(), StatusCode::BAD_REQUEST);
+
+        let next_round_uri = format!("/api/games/{}/round/next", code);
+        let next_round_attempt = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(&next_round_uri)
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({ "host_token": host_token }).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(next_round_attempt.status(), StatusCode::BAD_REQUEST);
+
+        for player_id in &player_ids {
+            let ready_uri = format!("/api/games/{}/ready", code);
+            let ready_response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(&ready_uri)
+                        .header("content-type", "application/json")
+                        .body(Body::from(
+                            json!({
+                                "player_id": player_id,
+                                "is_ready": true
+                            })
+                            .to_string(),
+                        ))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(ready_response.status(), StatusCode::OK);
+        }
+
+        let next_round_success = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(&next_round_uri)
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({ "host_token": host_token }).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(next_round_success.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
     async fn imposter_wrong_location_guess_rewards_crew() {
         let content = GameContent::load().expect("content should load");
         let state = Arc::new(AppState::new(content));
@@ -1576,6 +2013,29 @@ mod tests {
                 .unwrap();
             let joined: JoinGameResponse = serde_json::from_slice(&join_body).unwrap();
             player_ids.push(joined.player_id);
+        }
+
+        for player_id in &player_ids {
+            let ready_uri = format!("/api/games/{}/ready", code);
+            let ready_response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(&ready_uri)
+                        .header("content-type", "application/json")
+                        .body(Body::from(
+                            json!({
+                                "player_id": player_id,
+                                "is_ready": true
+                            })
+                            .to_string(),
+                        ))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(ready_response.status(), StatusCode::OK);
         }
 
         let start_uri = format!("/api/games/{}/start", code);

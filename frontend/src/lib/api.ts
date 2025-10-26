@@ -89,6 +89,7 @@ export interface PlayerSummary {
   name: string;
   crew_wins: number;
   imposter_wins: number;
+  is_ready: boolean;
 }
 
 export interface GameLobby {
@@ -97,6 +98,8 @@ export interface GameLobby {
   rules: GameRules;
   players: PlayerSummary[];
   player_count: number;
+  ready_player_count: number;
+  all_players_ready: boolean;
   created_at_ms: number;
   phase: GamePhase;
   last_round: RoundSummary | null;
@@ -195,6 +198,13 @@ export async function joinGame(code: string, payload: JoinGamePayload) {
   });
 }
 
+export async function setReady(code: string, payload: { player_id: string; is_ready: boolean }) {
+  return request<GameLobby>(`/api/games/${code}/ready`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function updateRules(code: string, hostToken: string, rules: GameRules) {
   return request<GameLobby>(`/api/games/${code}`, {
     method: "PATCH",
@@ -218,6 +228,18 @@ export async function startGame(code: string, hostToken: string) {
   return request<RoundPublicState>(`/api/games/${code}/start`, {
     method: "POST",
     body: JSON.stringify({ host_token: hostToken }),
+  });
+}
+
+export type AbortScope = "round" | "game";
+
+export async function abortGame(
+  code: string,
+  payload: { host_token: string; scope?: AbortScope },
+) {
+  return request<GameLobby>(`/api/games/${code}/abort`, {
+    method: "POST",
+    body: JSON.stringify(payload),
   });
 }
 
