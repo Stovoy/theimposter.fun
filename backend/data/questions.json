@@ -2,101 +2,251 @@
   {
     "id": "q001",
     "text": "What is the first thing you notice when you arrive here?",
-    "categories": ["general", "observation"]
+    "categories": ["general", "observation", "environment"]
   },
   {
     "id": "q002",
     "text": "How long have you been working your role today?",
-    "categories": ["roles", "time"]
+    "categories": ["roles", "time", "schedule"]
   },
   {
     "id": "q003",
     "text": "What kind of outfit would you expect to wear right now?",
-    "categories": ["appearance", "roles"]
+    "categories": ["appearance", "roles", "attire"]
   },
   {
     "id": "q004",
     "text": "If you had a break, where would you go?",
-    "categories": ["breaks", "location"]
+    "categories": ["breaks", "location", "routine"]
   },
   {
     "id": "q005",
     "text": "What is the biggest challenge you have to handle here?",
-    "categories": ["challenge", "roles"]
+    "categories": ["challenge", "roles", "pressure"]
   },
   {
     "id": "q006",
     "text": "What sounds are you hearing around you right now?",
-    "categories": ["senses", "observation"]
+    "categories": ["senses", "observation", "noise"]
   },
   {
     "id": "q007",
     "text": "Do you interact with visitors or mainly coworkers?",
-    "categories": ["interaction", "general"]
+    "categories": ["interaction", "general", "people"]
   },
   {
     "id": "q008",
     "text": "What time of day is busiest for you?",
-    "categories": ["time", "roles"]
+    "categories": ["time", "roles", "schedule"]
   },
   {
     "id": "q009",
     "text": "What special equipment do you rely on?",
-    "categories": ["tools", "roles"]
+    "categories": ["tools", "roles", "equipment"]
   },
   {
     "id": "q010",
     "text": "Are you indoors, outdoors, or somewhere in between?",
-    "categories": ["location", "observation"]
+    "categories": ["location", "observation", "environment"]
   },
   {
     "id": "q011",
     "text": "How would you describe the lighting where you are?",
-    "categories": ["senses", "observation"]
+    "categories": ["senses", "observation", "lighting"]
   },
   {
     "id": "q012",
     "text": "Who is responsible for keeping things safe here?",
-    "categories": ["safety", "roles"]
+    "categories": ["safety", "roles", "authority"]
   },
   {
     "id": "q013",
     "text": "Is food a big part of your day here?",
-    "categories": ["food", "general"]
+    "categories": ["food", "general", "routine"]
   },
   {
     "id": "q014",
     "text": "What do you do when something unexpected happens?",
-    "categories": ["emergency", "roles"]
+    "categories": ["emergency", "roles", "contingency"]
   },
   {
     "id": "q015",
     "text": "How long does it take to get here from home?",
-    "categories": ["commute", "general"]
+    "categories": ["commute", "general", "travel"]
   },
   {
     "id": "q016",
     "text": "Do you ever need to travel as part of this role?",
-    "categories": ["travel", "roles"]
+    "categories": ["travel", "roles", "schedule"]
   },
   {
     "id": "q017",
     "text": "What kind of people do you usually meet here?",
-    "categories": ["people", "general"]
+    "categories": ["people", "general", "interaction"]
   },
   {
     "id": "q018",
     "text": "Is there a uniform or dress code involved?",
-    "categories": ["appearance", "roles"]
+    "categories": ["appearance", "roles", "uniforms"]
   },
   {
     "id": "q019",
     "text": "What do you look forward to most during your time here?",
-    "categories": ["positive", "general"]
+    "categories": ["positive", "general", "morale"]
   },
   {
     "id": "q020",
     "text": "What kind of weather would make this place difficult?",
-    "categories": ["weather", "location"]
+    "categories": ["weather", "location", "risk"]
+  },
+  {
+    "id": "q021",
+    "text": "Where do most of your conversations take place?",
+    "categories": ["conversation", "interaction", "environment"]
+  },
+  {
+    "id": "q022",
+    "text": "What tool or item would you hate to lose today?",
+    "categories": ["tools", "roles", "priority"]
+  },
+  {
+    "id": "q023",
+    "text": "How do you know when your shift is over?",
+    "categories": ["time", "schedule", "routine"]
+  },
+  {
+    "id": "q024",
+    "text": "What is the biggest distraction you deal with?",
+    "categories": ["distraction", "productivity", "environment"]
+  },
+  {
+    "id": "q025",
+    "text": "How do you prepare before starting a typical day here?",
+    "categories": ["preparation", "routine", "roles"]
+  },
+  {
+    "id": "q026",
+    "text": "Who gives you instructions if plans change?",
+    "categories": ["authority", "communication", "coordination"]
+  },
+  {
+    "id": "q027",
+    "text": "What nearby smell would instantly give this place away?",
+    "categories": ["senses", "smell", "environment"]
+  },
+  {
+    "id": "q028",
+    "text": "How crowded does it get during peak times?",
+    "categories": ["crowd-level", "observation", "pressure"]
+  },
+  {
+    "id": "q029",
+    "text": "What kind of transportation did you use to get here?",
+    "categories": ["transportation", "travel", "commute"]
+  },
+  {
+    "id": "q030",
+    "text": "What safety drill do you practice most often?",
+    "categories": ["safety", "drill", "emergency"]
+  },
+  {
+    "id": "q031",
+    "text": "Who or what keeps track of time for everyone?",
+    "categories": ["time", "coordination", "awareness"]
+  },
+  {
+    "id": "q032",
+    "text": "How do you communicate with others who are far away?",
+    "categories": ["communication", "technology", "interaction"]
+  },
+  {
+    "id": "q033",
+    "text": "What would you do if the power went out?",
+    "categories": ["contingency", "safety", "infrastructure"]
+  },
+  {
+    "id": "q034",
+    "text": "What kind of seating is most common here?",
+    "categories": ["comfort", "observation", "environment"]
+  },
+  {
+    "id": "q035",
+    "text": "How do new people learn what to do?",
+    "categories": ["training", "learning", "onboarding"]
+  },
+  {
+    "id": "q036",
+    "text": "When do you feel the most pressure during your time here?",
+    "categories": ["pressure", "roles", "time"]
+  },
+  {
+    "id": "q037",
+    "text": "What scenery can you see if you look outside?",
+    "categories": ["scenery", "observation", "environment"]
+  },
+  {
+    "id": "q038",
+    "text": "How loud is it compared to your home?",
+    "categories": ["noise", "comparison", "senses"]
+  },
+  {
+    "id": "q039",
+    "text": "What is the temperature like for you right now?",
+    "categories": ["climate", "comfort", "environment"]
+  },
+  {
+    "id": "q040",
+    "text": "What do you usually carry in your pockets or bag?",
+    "categories": ["personal-gear", "roles", "preparation"]
+  },
+  {
+    "id": "q041",
+    "text": "Who cleans up when things get messy?",
+    "categories": ["maintenance", "cleaning", "roles"]
+  },
+  {
+    "id": "q042",
+    "text": "What celebration or event happens here occasionally?",
+    "categories": ["events", "celebration", "culture"]
+  },
+  {
+    "id": "q043",
+    "text": "What rule would get someone in trouble immediately?",
+    "categories": ["rules", "discipline", "safety"]
+  },
+  {
+    "id": "q044",
+    "text": "Where would you hide if you needed a quiet moment?",
+    "categories": ["privacy", "environment", "comfort"]
+  },
+  {
+    "id": "q045",
+    "text": "What schedule or calendar do you follow?",
+    "categories": ["planning", "schedule", "time"]
+  },
+  {
+    "id": "q046",
+    "text": "What sign or indicator tells you trouble is coming?",
+    "categories": ["awareness", "safety", "observation"]
+  },
+  {
+    "id": "q047",
+    "text": "What kind of footwear makes the most sense here?",
+    "categories": ["footwear", "appearance", "practicality"]
+  },
+  {
+    "id": "q048",
+    "text": "How do you welcome someone who just arrived?",
+    "categories": ["hospitality", "interaction", "roles"]
+  },
+  {
+    "id": "q049",
+    "text": "What part of your job would surprise an outsider?",
+    "categories": ["surprise", "roles", "insight"]
+  },
+  {
+    "id": "q050",
+    "text": "What keeps everyone motivated to stay here?",
+    "categories": ["motivation", "morale", "general"]
   }
 ]

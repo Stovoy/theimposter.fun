@@ -193,5 +193,70 @@
       "Logistics Coordinator",
       "Security Chief"
     ]
+  },
+  {
+    "id": 16,
+    "name": "City Hospital",
+    "roles": [
+      "Surgeon",
+      "Nurse",
+      "Paramedic",
+      "Radiologist",
+      "Pharmacist",
+      "Administrator",
+      "Visitor"
+    ]
+  },
+  {
+    "id": 17,
+    "name": "University Library",
+    "roles": [
+      "Librarian",
+      "Archivist",
+      "Graduate Student",
+      "Security Guard",
+      "Researcher",
+      "Facilities Manager",
+      "Visiting Scholar"
+    ]
+  },
+  {
+    "id": 18,
+    "name": "Airship Dock",
+    "roles": [
+      "Dockmaster",
+      "Pilot",
+      "Mechanic",
+      "Navigator",
+      "Weather Officer",
+      "Passenger",
+      "Customs Agent"
+    ]
+  },
+  {
+    "id": 19,
+    "name": "Esports Arena",
+    "roles": [
+      "Team Captain",
+      "Shoutcaster",
+      "Analyst",
+      "Production Manager",
+      "Stage Hand",
+      "Fan",
+      "Medic"
+    ]
+  },
+  {
+    "id": 20,
+    "name": "Volcanic Research Station",
+    "roles": [
+      "Volcanologist",
+      "Geochemist",
+      "Drone Operator",
+      "Safety Officer",
+      "Data Analyst",
+      "Logistics Coordinator",
+      "Photographer"
+    ]
   }
 ]
