@@ -3,7 +3,7 @@ use std::{
     fmt, io,
     net::SocketAddr,
     sync::Arc,
-    time::SystemTime,
+    time::{Duration, SystemTime},
 };
 
 use axum::{
@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::sync::RwLock;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
-use tracing::info;
+use tracing::{info, warn};
 use uuid::Uuid;
 
 type SharedState = Arc<AppState>;
@@ -617,7 +617,10 @@ async fn main() -> Result<(), AppError> {
 
     let content = GameContent::load()?;
     let state = Arc::new(AppState::new(content));
-    let app = app_router(state);
+    let lobby_ttl = lobby_ttl_duration();
+    let cleanup_interval = cleanup_interval_duration();
+    state.spawn_cleanup(lobby_ttl, cleanup_interval);
+    let app = app_router(Arc::clone(&state));
 
     let port = std::env::var("PORT")
         .ok()
@@ -636,6 +639,43 @@ fn init_tracing() {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .with_target(false)
         .try_init();
+}
+
+fn lobby_ttl_duration() -> Duration {
+    const DEFAULT_TTL_SECS: u64 = 60 * 60;
+
+    if let Some(seconds) = env_u64("LOBBY_TTL_SECONDS") {
+        return Duration::from_secs(seconds);
+    }
+
+    if let Some(minutes) = env_u64("LOBBY_TTL_MINUTES") {
+        return Duration::from_secs(minutes.saturating_mul(60));
+    }
+
+    Duration::from_secs(DEFAULT_TTL_SECS)
+}
+
+fn cleanup_interval_duration() -> Duration {
+    const DEFAULT_INTERVAL_SECS: u64 = 5 * 60;
+
+    if let Some(seconds) = env_u64("LOBBY_CLEANUP_INTERVAL_SECONDS") {
+        return Duration::from_secs(seconds);
+    }
+
+    Duration::from_secs(DEFAULT_INTERVAL_SECS)
+}
+
+fn env_u64(var: &str) -> Option<u64> {
+    match std::env::var(var) {
+        Ok(raw) => match raw.parse::<u64>() {
+            Ok(value) => Some(value),
+            Err(_) => {
+                warn!(variable = %var, value = %raw, "failed to parse environment override as u64");
+                None
+            }
+        },
+        Err(_) => None,
+    }
 }
 
 fn app_router(state: SharedState) -> Router {
@@ -680,6 +720,59 @@ impl AppState {
 
     fn content(&self) -> Arc<GameContent> {
         Arc::clone(&self.content)
+    }
+
+    async fn purge_expired_lobbies(&self, ttl: Duration) -> usize {
+        if ttl.is_zero() {
+            return 0;
+        }
+
+        let mut games = self.games.write().await;
+        let now = SystemTime::now();
+        let expired: Vec<RoomCode> = games
+            .iter()
+            .filter_map(|(code, game)| {
+                if !matches!(game.phase, GamePhase::Lobby | GamePhase::AwaitingNextRound) {
+                    return None;
+                }
+                match now.duration_since(game.last_active) {
+                    Ok(elapsed) if elapsed >= ttl => Some(code.clone()),
+                    _ => None,
+                }
+            })
+            .collect();
+
+        for code in &expired {
+            games.remove(code);
+        }
+
+        if !expired.is_empty() {
+            info!(count = expired.len(), "expired inactive lobbies");
+        }
+
+        expired.len()
+    }
+
+    fn spawn_cleanup(self: &Arc<Self>, ttl: Duration, interval: Duration) {
+        if ttl.is_zero() {
+            info!("lobby expiration disabled (ttl set to zero)");
+            return;
+        }
+
+        let interval = if interval.is_zero() {
+            Duration::from_secs(60)
+        } else {
+            interval
+        };
+
+        let state = Arc::clone(self);
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(interval);
+            loop {
+                ticker.tick().await;
+                let _ = state.purge_expired_lobbies(ttl).await;
+            }
+        });
     }
 }
 
@@ -728,6 +821,7 @@ struct Game {
     leader_id: Uuid,
     players: HashMap<Uuid, Player>,
     created_at: SystemTime,
+    last_active: SystemTime,
     round_counter: u32,
     phase: GamePhase,
     current_round: Option<RoundState>,
@@ -773,6 +867,10 @@ impl Game {
         Ok(())
     }
 
+    fn touch(&mut self) {
+        self.last_active = SystemTime::now();
+    }
+
     fn ready_count(&self) -> usize {
         self.players.values().filter(|player| player.ready).count()
     }
@@ -802,6 +900,7 @@ impl Game {
             .get_mut(&player_id)
             .ok_or_else(|| AppError::Forbidden("player not part of this game".into()))?;
         player.ready = ready;
+        self.touch();
         Ok(())
     }
 
@@ -915,10 +1014,15 @@ impl Game {
         self.phase = GamePhase::InRound;
         self.current_round = Some(round);
         self.reset_ready_states();
-        if let Some(current) = &self.current_round {
+        if let Some(public_state) = self
+            .current_round
+            .as_ref()
+            .map(|current| current.public_state())
+        {
             self.used_location_ids.insert(selected_id);
             self.last_round = None;
-            return Ok(current.public_state());
+            self.touch();
+            return Ok(public_state);
         }
 
         Err(AppError::Unexpected(Box::new(io::Error::new(
@@ -938,6 +1042,7 @@ impl Game {
         let round = self.round_state_mut()?;
         let (question, next_player) = round.next_question(player_id, &rules, content, &mut rng)?;
         let asked_total = round.asked_questions.len();
+        self.touch();
         Ok(NextQuestionResponse {
             question: QuestionView::from(&question),
             next_turn_player_id: next_player,
@@ -975,6 +1080,7 @@ impl Game {
             }
         }
 
+        self.touch();
         Ok(self.lobby_view())
     }
 
@@ -1017,6 +1123,7 @@ impl Game {
         self.round_history.push(summary);
         self.phase = GamePhase::AwaitingNextRound;
         self.reset_ready_states();
+        self.touch();
         Ok(resolution)
     }
 }
@@ -1171,6 +1278,7 @@ async fn create_game(
         leader_id: host_player.id,
         players,
         created_at: SystemTime::now(),
+        last_active: SystemTime::now(),
         round_counter: 0,
         phase: GamePhase::Lobby,
         current_round: None,
@@ -1295,6 +1403,7 @@ async fn join_game(
     let player_id = player.id;
     game.players.insert(player_id, player);
     game.reset_ready_states();
+    game.touch();
 
     Ok((StatusCode::OK, Json(JoinGameResponse { player_id, code })))
 }
@@ -1355,6 +1464,7 @@ async fn update_rules(
     let content = state.content();
     game.rules = payload.rules.normalize(&content)?;
     game.reset_ready_states();
+    game.touch();
     Ok((StatusCode::OK, Json(game.lobby_view())))
 }
 
@@ -1363,11 +1473,14 @@ async fn fetch_game_details(
     Path(code): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
     let code = RoomCode::new(code)?;
-    let games = state.games.read().await;
+    let mut games = state.games.write().await;
     let game = games
-        .get(&code)
+        .get_mut(&code)
         .ok_or_else(|| AppError::NotFound("game not found".into()))?;
-    Ok((StatusCode::OK, Json(game.lobby_view())))
+    game.touch();
+    let lobby = game.lobby_view();
+    drop(games);
+    Ok((StatusCode::OK, Json(lobby)))
 }
 
 async fn get_round_state(
@@ -1375,12 +1488,14 @@ async fn get_round_state(
     Path(code): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
     let code = RoomCode::new(code)?;
-    let games = state.games.read().await;
+    let mut games = state.games.write().await;
     let game = games
-        .get(&code)
+        .get_mut(&code)
         .ok_or_else(|| AppError::NotFound("game not found".into()))?;
 
     let public_state = game.public_round_state()?;
+    game.touch();
+    drop(games);
     Ok((StatusCode::OK, Json(public_state)))
 }
 
@@ -1465,12 +1580,14 @@ async fn get_assignment(
     let code = RoomCode::new(code)?;
     let player_id = Uuid::parse_str(&player_id)
         .map_err(|_| AppError::BadRequest("invalid player id".into()))?;
-    let games = state.games.read().await;
+    let mut games = state.games.write().await;
     let game = games
-        .get(&code)
+        .get_mut(&code)
         .ok_or_else(|| AppError::NotFound("game not found".into()))?;
 
     let assignment = game.assignment_for(player_id)?;
+    game.touch();
+    drop(games);
     Ok((StatusCode::OK, Json(assignment)))
 }
 
@@ -1479,9 +1596,9 @@ async fn get_game_locations(
     Path(code): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
     let code = RoomCode::new(code)?;
-    let games = state.games.read().await;
+    let mut games = state.games.write().await;
     let game = games
-        .get(&code)
+        .get_mut(&code)
         .ok_or_else(|| AppError::NotFound("game not found".into()))?;
 
     if game.location_pool.is_empty() {
@@ -1490,12 +1607,10 @@ async fn get_game_locations(
         ));
     }
 
-    Ok((
-        StatusCode::OK,
-        Json(LocationListResponse {
-            locations: game.location_options(),
-        }),
-    ))
+    game.touch();
+    let locations = game.location_options();
+    drop(games);
+    Ok((StatusCode::OK, Json(LocationListResponse { locations })))
 }
 
 #[derive(Debug, Serialize, Deserialize)]
