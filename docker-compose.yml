@@ -4,6 +4,7 @@ services:
   backend:
     build:
       context: backend
+    image: ${REGISTRY:-theimposter}/backend:${IMAGE_TAG:-latest}
     environment:
       - RUST_LOG=info
     expose:
@@ -16,6 +17,7 @@ services:
     build:
       context: .
       dockerfile: deploy/caddy/Dockerfile
+    image: ${REGISTRY:-theimposter}/frontend:${IMAGE_TAG:-latest}
     environment:
       DOMAIN: ${DOMAIN:-theimposter.test}
     ports:

@@ -8,15 +8,19 @@ use std::{
 
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::{
+        Path, State,
+        ws::{Message, WebSocket, WebSocketUpgrade},
+    },
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::{get, post},
 };
+use futures::{SinkExt, StreamExt};
 use rand::{Rng, distributions::Alphanumeric, seq::SliceRandom, thread_rng};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, broadcast};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::{info, warn};
 use uuid::Uuid;
@@ -691,6 +695,7 @@ fn app_router(state: SharedState) -> Router {
         .route("/api/games/:code/start", post(start_game))
         .route("/api/games/:code/abort", post(abort_game))
         .route("/api/games/:code/round", get(get_round_state))
+        .route("/api/games/:code/stream", get(stream_game))
         .route("/api/games/:code/round/question", post(draw_next_question))
         .route("/api/games/:code/round/guess", post(submit_guess))
         .route("/api/games/:code/round/next", post(start_next_round))
@@ -829,9 +834,38 @@ struct Game {
     round_history: Vec<RoundSummary>,
     location_pool: Vec<LocationDefinition>,
     used_location_ids: HashSet<u32>,
+    events: broadcast::Sender<GameEvent>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct GameSnapshot {
+    lobby: GameLobby,
+    round: Option<RoundPublicState>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum GameEvent {
+    Snapshot(GameSnapshot),
+    Lobby { lobby: GameLobby },
+    Round { round: Option<RoundPublicState> },
+    Pong,
 }
 
 impl Game {
+    fn snapshot(&self) -> GameSnapshot {
+        GameSnapshot {
+            lobby: self.lobby_view(),
+            round: self.current_round_view(),
+        }
+    }
+
+    fn current_round_view(&self) -> Option<RoundPublicState> {
+        self.current_round
+            .as_ref()
+            .map(|round| round.public_state())
+    }
+
     fn lobby_view(&self) -> GameLobby {
         GameLobby {
             code: self.code.clone(),
@@ -1267,6 +1301,7 @@ async fn create_game(
     let mut games_lock = state.games.write().await;
     let existing_codes: HashSet<RoomCode> = games_lock.keys().cloned().collect();
     let code = RoomCode::generate(&existing_codes);
+    let (events_tx, _) = broadcast::channel(64);
 
     let mut players = HashMap::new();
     players.insert(host_player.id, host_player.clone());
@@ -1286,6 +1321,7 @@ async fn create_game(
         round_history: Vec::new(),
         location_pool: Vec::new(),
         used_location_ids: HashSet::new(),
+        events: events_tx.clone(),
     };
 
     games_lock.insert(code.clone(), game);
@@ -1404,6 +1440,10 @@ async fn join_game(
     game.players.insert(player_id, player);
     game.reset_ready_states();
     game.touch();
+    let lobby_update = game.lobby_view();
+    let _ = game.events.send(GameEvent::Lobby {
+        lobby: lobby_update.clone(),
+    });
 
     Ok((StatusCode::OK, Json(JoinGameResponse { player_id, code })))
 }
@@ -1422,6 +1462,14 @@ async fn start_game(
 
     game.ensure_host(&payload.host_token)?;
     let public_state = game.begin_round(content.as_ref())?;
+    let lobby = game.lobby_view();
+    let round_update = public_state.clone();
+    let _ = game.events.send(GameEvent::Lobby {
+        lobby: lobby.clone(),
+    });
+    let _ = game.events.send(GameEvent::Round {
+        round: Some(round_update.clone()),
+    });
     Ok((StatusCode::OK, Json(public_state)))
 }
 
@@ -1437,7 +1485,11 @@ async fn update_ready_state(
         .ok_or_else(|| AppError::NotFound("game not found".into()))?;
 
     game.set_player_ready(payload.player_id, payload.is_ready)?;
-    Ok((StatusCode::OK, Json(game.lobby_view())))
+    let lobby = game.lobby_view();
+    let _ = game.events.send(GameEvent::Lobby {
+        lobby: lobby.clone(),
+    });
+    Ok((StatusCode::OK, Json(lobby)))
 }
 
 #[derive(Deserialize)]
@@ -1465,7 +1517,11 @@ async fn update_rules(
     game.rules = payload.rules.normalize(&content)?;
     game.reset_ready_states();
     game.touch();
-    Ok((StatusCode::OK, Json(game.lobby_view())))
+    let lobby = game.lobby_view();
+    let _ = game.events.send(GameEvent::Lobby {
+        lobby: lobby.clone(),
+    });
+    Ok((StatusCode::OK, Json(lobby)))
 }
 
 async fn fetch_game_details(
@@ -1499,6 +1555,26 @@ async fn get_round_state(
     Ok((StatusCode::OK, Json(public_state)))
 }
 
+async fn stream_game(
+    ws: WebSocketUpgrade,
+    State(state): State<SharedState>,
+    Path(code): Path<String>,
+) -> Result<impl IntoResponse, AppError> {
+    let code = RoomCode::new(code)?;
+    let (events, snapshot) = {
+        let games = state.games.read().await;
+        let game = games
+            .get(&code)
+            .ok_or_else(|| AppError::NotFound("game not found".into()))?;
+        (game.events.clone(), game.snapshot())
+    };
+    let state_clone = Arc::clone(&state);
+    let code_clone = code.clone();
+    Ok(ws.on_upgrade(move |socket| async move {
+        handle_socket(socket, state_clone, code_clone, events, snapshot).await;
+    }))
+}
+
 async fn draw_next_question(
     State(state): State<SharedState>,
     Path(code): Path<String>,
@@ -1512,6 +1588,10 @@ async fn draw_next_question(
         .ok_or_else(|| AppError::NotFound("game not found".into()))?;
 
     let response = game.draw_next_question(payload.player_id, content.as_ref())?;
+    let round = game.public_round_state()?;
+    let _ = game.events.send(GameEvent::Round {
+        round: Some(round.clone()),
+    });
     Ok((StatusCode::OK, Json(response)))
 }
 
@@ -1537,6 +1617,14 @@ async fn submit_guess(
     };
 
     let resolution = game.submit_guess(payload.player_id, action)?;
+    let round = game.public_round_state()?;
+    let lobby = game.lobby_view();
+    let _ = game.events.send(GameEvent::Round {
+        round: Some(round.clone()),
+    });
+    let _ = game.events.send(GameEvent::Lobby {
+        lobby: lobby.clone(),
+    });
     Ok((StatusCode::OK, Json(GuessResponse { resolution })))
 }
 
@@ -1554,6 +1642,14 @@ async fn start_next_round(
 
     game.ensure_host(&payload.host_token)?;
     let public_state = game.begin_round(content.as_ref())?;
+    let lobby = game.lobby_view();
+    let round_update = public_state.clone();
+    let _ = game.events.send(GameEvent::Lobby {
+        lobby: lobby.clone(),
+    });
+    let _ = game.events.send(GameEvent::Round {
+        round: Some(round_update.clone()),
+    });
     Ok((StatusCode::OK, Json(public_state)))
 }
 
@@ -1570,6 +1666,11 @@ async fn abort_game(
 
     game.ensure_host(&payload.host_token)?;
     let lobby = game.abort(payload.scope)?;
+    let round = game.current_round_view();
+    let _ = game.events.send(GameEvent::Lobby {
+        lobby: lobby.clone(),
+    });
+    let _ = game.events.send(GameEvent::Round { round });
     Ok((StatusCode::OK, Json(lobby)))
 }
 
@@ -1628,6 +1729,106 @@ async fn get_question_categories(
             categories: content.default_categories(),
         }),
     ))
+}
+
+async fn handle_socket(
+    socket: WebSocket,
+    state: SharedState,
+    code: RoomCode,
+    events: broadcast::Sender<GameEvent>,
+    initial: GameSnapshot,
+) {
+    info!(room = %code, "realtime subscriber connected");
+    let (mut sender, mut receiver) = socket.split();
+    if let Some(message) = event_message(&GameEvent::Snapshot(initial.clone())) {
+        if sender.send(message).await.is_err() {
+            let _ = sender.close().await;
+            warn!(room = %code, "failed to deliver initial snapshot");
+            return;
+        }
+    }
+
+    let mut rx = events.subscribe();
+    let mut ping_interval = tokio::time::interval(Duration::from_secs(30));
+
+    loop {
+        tokio::select! {
+            _ = ping_interval.tick() => {
+                if sender.send(Message::Ping(Vec::new())).await.is_err() {
+                    break;
+                }
+            }
+            inbound = receiver.next() => {
+                match inbound {
+                    Some(Ok(Message::Close(frame))) => {
+                        let _ = sender.send(Message::Close(frame)).await;
+                        break;
+                    }
+                    Some(Ok(Message::Ping(payload))) => {
+                        if sender.send(Message::Pong(payload)).await.is_err() {
+                            break;
+                        }
+                    }
+                    Some(Ok(Message::Text(text))) => {
+                        if text.trim().eq_ignore_ascii_case("ping") {
+                            if let Some(msg) = event_message(&GameEvent::Pong) {
+                                if sender.send(msg).await.is_err() {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    Some(Ok(Message::Binary(_))) | Some(Ok(Message::Pong(_))) => {
+                        // ignore
+                    }
+                    Some(Err(err)) => {
+                        warn!(room = %code, error = %err, "websocket receive error");
+                        break;
+                    }
+                    None => break,
+                }
+            }
+            broadcast = rx.recv() => {
+                match broadcast {
+                    Ok(event) => {
+                        if let Some(message) = event_message(&event) {
+                            if sender.send(message).await.is_err() {
+                                break;
+                            }
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(_)) => {
+                        if let Some(snapshot) = latest_snapshot(&state, &code).await {
+                            if let Some(message) = event_message(&GameEvent::Snapshot(snapshot)) {
+                                if sender.send(message).await.is_err() {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        }
+    }
+
+    let _ = sender.close().await;
+    info!(room = %code, "realtime subscriber disconnected");
+}
+
+fn event_message(event: &GameEvent) -> Option<Message> {
+    match serde_json::to_string(event) {
+        Ok(payload) => Some(Message::Text(payload)),
+        Err(err) => {
+            warn!(error = %err, "failed to serialize game event");
+            None
+        }
+    }
+}
+
+async fn latest_snapshot(state: &SharedState, code: &RoomCode) -> Option<GameSnapshot> {
+    let games = state.games.read().await;
+    games.get(code).map(Game::snapshot)
 }
 
 async fn health_check() -> &'static str {

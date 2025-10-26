@@ -4,11 +4,11 @@ WORKDIR /app
 
 COPY Cargo.toml Cargo.lock ./
 RUN mkdir src && echo "fn main() {}" > src/main.rs
-RUN cargo build --release
+RUN cargo build --locked --release
 
 COPY src ./src
 COPY data ./data
-RUN cargo build --release
+RUN cargo build --locked --release && strip target/release/theimposter-backend
 
 FROM debian:bookworm-slim as runtime
 

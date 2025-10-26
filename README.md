@@ -104,6 +104,48 @@ Suggested production environment variables:
 - `DOMAIN=theimposter.app`
 - `RUST_LOG=info,theimposter_backend=debug`
 
+### Namecheap DNS Setup
+
+Point the apex domain and `www` subdomain at the DigitalOcean droplet so Caddy can obtain certificates:
+
+1. In the Namecheap dashboard, open **Domain List → Manage → Advanced DNS**.
+2. Add (or update) an **A Record** with `Host` set to `@` and `Value` set to the droplet's public IPv4 address. Keep TTL at `Automatic`.
+3. Add an **A Record** with `Host` set to `*` (or use a `CNAME` for `www` pointing to `@` if wildcard support is not desired) and point it to the same IPv4 address.
+4. Remove any conflicting URL redirect records so the DNS changes take effect immediately.
+
+Once DNS propagates, Caddy will request certificates for `theimposter.app` and serve HTTPS automatically.
+
+### Automated Rollout Script
+
+The repository ships with `deploy/release.sh`, which builds, tags, and deploys both images to a DigitalOcean droplet via SSH. Prerequisites:
+
+- Docker Buildx enabled locally and logged into the target registry (e.g., `registry.digitalocean.com/<namespace>`).
+- SSH access to the droplet with Docker Engine + `docker compose` installed.
+
+Example usage:
+
+```bash
+export REGISTRY=registry.digitalocean.com/theimposter
+export SSH_HOST=203.0.113.42   # droplet IP or hostname
+export SSH_USER=root           # optional, defaults to root
+export DOMAIN=theimposter.app  # forwarded to docker compose file
+./deploy/release.sh
+```
+
+The script:
+
+- Builds and pushes `backend` and `frontend` images tagged with `IMAGE_TAG` (defaults to the current git SHA).
+- Syncs `docker-compose.yml` and the `deploy/` directory to the droplet (default path `/opt/theimposter`).
+- Runs `docker compose pull` followed by `docker compose up -d --remove-orphans` on the droplet.
+
+Override `IMAGE_TAG` when deploying from a detached commit:
+
+```bash
+IMAGE_TAG=v0.4.1 ./deploy/release.sh
+```
+
+Ensure the droplet's `/opt/theimposter/.env` (optional) or environment exported within `release.sh` defines `DOMAIN`, `REGISTRY`, and `IMAGE_TAG` for subsequent manual restarts.
+
 ## Game Flow Highlights
 
 1. Host creates a lobby, receives a short room code and management token.

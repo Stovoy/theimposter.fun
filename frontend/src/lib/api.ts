@@ -76,6 +76,24 @@ export interface RoundPublicState {
   resolution: RoundResolution | null;
 }
 
+export type GameEvent =
+  | {
+      type: "snapshot";
+      lobby: GameLobby;
+      round: RoundPublicState | null;
+    }
+  | {
+      type: "lobby";
+      lobby: GameLobby;
+    }
+  | {
+      type: "round";
+      round: RoundPublicState | null;
+    }
+  | {
+      type: "pong";
+    };
+
 export interface PlayerAssignmentView {
   round_number: number;
   is_imposter: boolean;
@@ -322,4 +340,23 @@ export async function getCategories() {
     method: "GET",
   });
   return response.categories;
+}
+
+export function buildGameStreamUrl(code: string) {
+  const base =
+    API_BASE && API_BASE.length
+      ? API_BASE
+      : typeof window !== "undefined"
+        ? window.location.origin
+        : "";
+  if (!base) {
+    throw new Error("Unable to resolve API base url for realtime stream");
+  }
+  const url = new URL(`/api/games/${code}/stream`, base);
+  if (url.protocol === "https:") {
+    url.protocol = "wss:";
+  } else if (url.protocol === "http:") {
+    url.protocol = "ws:";
+  }
+  return url.toString();
 }

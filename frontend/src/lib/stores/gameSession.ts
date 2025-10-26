@@ -1,6 +1,7 @@
 import { derived, writable } from "svelte/store";
 import {
   abortGame,
+  buildGameStreamUrl,
   createGame,
   drawNextQuestion,
   getAssignment,
@@ -16,6 +17,7 @@ import {
   updateRules,
   type AbortScope,
   type CreateGameResponse,
+  type GameEvent,
   type GameLobby,
   type GameRules,
   type GuessResponse,
@@ -64,6 +66,9 @@ export interface GameClientState {
   isOnline: boolean;
   offlineSince: number | null;
   lastLobbyError: string | null;
+  realtimeConnected: boolean;
+  realtimeAttempts: number;
+  lastRealtimeError: string | null;
 }
 
 const detectOnline = () =>
@@ -87,6 +92,9 @@ const initialState: GameClientState = {
   isOnline: detectOnline(),
   offlineSince: detectOnline() ? null : Date.now(),
   lastLobbyError: null,
+  realtimeConnected: false,
+  realtimeAttempts: 0,
+  lastRealtimeError: null,
 };
 
 const canUseStorage =
@@ -130,6 +138,10 @@ export const createGameSessionStore = () => {
   let lobbyTimer: ReturnType<typeof setInterval> | null = null;
   let roundTimer: ReturnType<typeof setInterval> | null = null;
   let toastCounter = 0;
+  let realtime: WebSocket | null = null;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let manualDisconnect = false;
+  let reconnectAttempts = 0;
 
   const updateState = (fn: (state: GameClientState) => GameClientState) => {
     internal.update((state) => fn(state));
@@ -179,6 +191,171 @@ export const createGameSessionStore = () => {
   const clearToasts = () => {
     updateState((state) => ({ ...state, toasts: [] }));
   };
+
+  const updateRealtimeStatus = (connected: boolean, error?: string | null) => {
+    updateState((state) => ({
+      ...state,
+      realtimeConnected: connected,
+      realtimeAttempts: reconnectAttempts,
+      lastRealtimeError: error ?? (connected ? null : state.lastRealtimeError),
+    }));
+  };
+
+  const clearReconnectSchedule = () => {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+  };
+
+  const startFallbackPolling = () => {
+    startLobbyPolling();
+    if (currentState.round || currentState.lobby?.phase === "InRound") {
+      startRoundPolling();
+    }
+  };
+
+  function applyLobbyUpdate(lobby: GameLobby) {
+    const now = Date.now();
+    updateState((state) => ({
+      ...state,
+      lobby,
+      syncingLobby: false,
+      lastLobbySyncMs: now,
+      lastError: null,
+      lastLobbyError: null,
+    }));
+  }
+
+  function applyRoundUpdate(round: RoundPublicState | null) {
+    const now = Date.now();
+    updateState((state) => ({
+      ...state,
+      round,
+      assignment: round ? state.assignment : null,
+      syncingRound: false,
+      lastRoundSyncMs: now,
+      lastError: null,
+    }));
+  }
+
+  function handleRealtimeEvent(event: GameEvent) {
+    switch (event.type) {
+      case "snapshot":
+        applyLobbyUpdate(event.lobby);
+        applyRoundUpdate(event.round ?? null);
+        break;
+      case "lobby":
+        applyLobbyUpdate(event.lobby);
+        break;
+      case "round":
+        applyRoundUpdate(event.round ?? null);
+        break;
+      case "pong":
+      default:
+        break;
+    }
+  }
+
+  function connectRealtime() {
+    if (typeof window === "undefined") return;
+    if (realtime || manualDisconnect) return;
+
+    const session = currentState.session ?? loadStoredSession();
+    if (!session) return;
+
+    let url: string;
+    try {
+      url = buildGameStreamUrl(session.code);
+    } catch (err) {
+      updateRealtimeStatus(false, errorMessage(err));
+      return;
+    }
+
+    manualDisconnect = false;
+    try {
+      realtime = new WebSocket(url);
+    } catch (err) {
+      updateRealtimeStatus(false, errorMessage(err));
+      scheduleReconnect(errorMessage(err));
+      return;
+    }
+
+    updateRealtimeStatus(false);
+
+    realtime.onopen = () => {
+      clearReconnectSchedule();
+      reconnectAttempts = 0;
+      updateRealtimeStatus(true);
+      stopLobbyPolling();
+      stopRoundPolling();
+      Promise.all([
+        refreshLobby({ silent: true }).catch(() => {}),
+        refreshRound({ silent: true }).catch(() => {}),
+      ]).catch(() => {
+        // errors already surfaced
+      });
+    };
+
+    realtime.onmessage = (event) => {
+      if (typeof event.data !== "string") {
+        return;
+      }
+      try {
+        const data = JSON.parse(event.data) as GameEvent;
+        handleRealtimeEvent(data);
+      } catch (err) {
+        updateRealtimeStatus(currentState.realtimeConnected, errorMessage(err));
+      }
+    };
+
+    realtime.onerror = () => {
+      updateRealtimeStatus(false, "Realtime connection error");
+    };
+
+    realtime.onclose = (event) => {
+      realtime = null;
+      const reason = event.reason || null;
+      updateRealtimeStatus(false, reason);
+      if (manualDisconnect) {
+        manualDisconnect = false;
+        reconnectAttempts = 0;
+        return;
+      }
+      startFallbackPolling();
+      scheduleReconnect(reason ?? undefined);
+    };
+  }
+
+  function scheduleReconnect(reason?: string) {
+    if (typeof window === "undefined") return;
+    if (manualDisconnect) return;
+    clearReconnectSchedule();
+    reconnectAttempts = Math.min(reconnectAttempts + 1, 8);
+    updateRealtimeStatus(false, reason ?? currentState.lastRealtimeError);
+    startFallbackPolling();
+    const delay = Math.min(30000, 2000 * 2 ** (reconnectAttempts - 1));
+    reconnectTimer = window.setTimeout(() => {
+      reconnectTimer = null;
+      connectRealtime();
+    }, delay);
+  }
+
+  function teardownRealtime(manual = false) {
+    clearReconnectSchedule();
+    manualDisconnect = manual;
+    if (realtime) {
+      try {
+        realtime.close();
+      } catch {
+        // ignore errors when closing
+      }
+    } else {
+      manualDisconnect = false;
+      reconnectAttempts = 0;
+      updateRealtimeStatus(false);
+    }
+  }
 
   const ensureCategories = async () => {
     try {
@@ -287,6 +464,10 @@ export const createGameSessionStore = () => {
   };
 
   const startLobbyPolling = (interval = DEFAULT_POLL_INTERVAL) => {
+    if (currentState.realtimeConnected) {
+      stopLobbyPolling();
+      return;
+    }
     stopLobbyPolling();
     refreshLobby({ silent: true }).catch(() => {
       // error already handled in refresh
@@ -299,6 +480,10 @@ export const createGameSessionStore = () => {
   };
 
   const startRoundPolling = (interval = DEFAULT_POLL_INTERVAL) => {
+    if (currentState.realtimeConnected) {
+      stopRoundPolling();
+      return;
+    }
     stopRoundPolling();
     refreshRound({ silent: true }).catch(() => {
       // handled
@@ -339,6 +524,11 @@ export const createGameSessionStore = () => {
       } catch {
         // ignore initial failure, user can retrigger
       }
+      connectRealtime();
+      startLobbyPolling();
+      if (currentState.lobby?.phase === "InRound") {
+        startRoundPolling();
+      }
     } else {
       setStatus("ready");
     }
@@ -367,6 +557,7 @@ export const createGameSessionStore = () => {
       }));
       await refreshLobby({ silent: true });
       pushToast("success", `Lobby ${response.code} ready to share`);
+      connectRealtime();
       startLobbyPolling();
       return response;
     });
@@ -391,12 +582,14 @@ export const createGameSessionStore = () => {
       }));
       await refreshLobby({ silent: true });
       pushToast("success", "Joined lobby successfully");
+      connectRealtime();
       startLobbyPolling();
       return response;
     }, { persistentErrors: true });
   };
 
   const leaveSession = () => {
+    teardownRealtime(true);
     stopLobbyPolling();
     stopRoundPolling();
     saveStoredSession(null);
@@ -444,9 +637,11 @@ export const createGameSessionStore = () => {
     return withAction(async () => {
       const round = await startGame(session.code, hostToken);
       updateState((state) => ({ ...state, round }));
-      await refreshLobby({ silent: true }).catch(() => {
-        /* ignore*/
-      });
+      if (!currentState.realtimeConnected) {
+        await refreshLobby({ silent: true }).catch(() => {
+          /* ignore*/
+        });
+      }
       startRoundPolling();
       return round;
     });
@@ -461,9 +656,11 @@ export const createGameSessionStore = () => {
     return withAction(async () => {
       const round = await startNextRound(session.code, hostToken);
       updateState((state) => ({ ...state, round }));
-      await refreshLobby({ silent: true }).catch(() => {
-        /* ignore */
-      });
+      if (!currentState.realtimeConnected) {
+        await refreshLobby({ silent: true }).catch(() => {
+          /* ignore */
+        });
+      }
       startRoundPolling();
       return round;
     });
@@ -517,9 +714,11 @@ export const createGameSessionStore = () => {
         session.code,
         session.playerId,
       );
-      await refreshRound({ silent: true }).catch(() => {
-        /* ignore */
-      });
+      if (!currentState.realtimeConnected) {
+        await refreshRound({ silent: true }).catch(() => {
+          /* ignore */
+        });
+      }
       return response;
     });
   };
@@ -541,14 +740,16 @@ export const createGameSessionStore = () => {
       } else {
         throw new Error("Guess payload missing accused or location");
       }
-      await Promise.all([
-        refreshRound({ silent: true }).catch(() => {
-          /* ignore */
-        }),
-        refreshLobby({ silent: true }).catch(() => {
-          /* ignore */
-        }),
-      ]);
+      if (!currentState.realtimeConnected) {
+        await Promise.all([
+          refreshRound({ silent: true }).catch(() => {
+            /* ignore */
+          }),
+          refreshLobby({ silent: true }).catch(() => {
+            /* ignore */
+          }),
+        ]);
+      }
       return result;
     });
   };
