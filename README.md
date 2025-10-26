@@ -1,6 +1,10 @@
 # The Imposter
 
-Multiplayer party game where one player is secretly the imposter and everyone else shares a location role. Players meet in person, ask questions, and try to uncover the imposter before time runs out.
+Mobile-first social deduction party game where one player is secretly the imposter and everyone else shares a location role. Players meet in person, ask questions, and try to uncover the imposter before time runs out.
+
+- 🧭 Core mechanics & etiquette: see [`RULES.md`](RULES.md)
+- 🗺️ Build roadmap & open tasks: see [`TODO.md`](TODO.md)
+- 🌐 Production target: `theimposter.app` with Caddy TLS termination on DigitalOcean
 
 This repository contains:
 
@@ -89,9 +93,11 @@ Suggested production environment variables:
 
 1. Host creates a lobby, receives a short room code and management token.
 2. Players enter the 4-character code on their phones to join.
-3. Host can tweak rules (max players, round timers, question policy) before the game starts.
+3. Host can tweak rules (max players, round timers, question categories, location pool size) before the game starts.
 4. During each round, all non-imposters receive location + role hints, while the imposter stays in the dark.
 5. Players ask each other questions in person to deduce the imposter.
+6. Any player can declare a guess at any time. Imposters guess the location; non-imposters accuse a player.
+7. Wins are tracked separately for imposter victories and normal victories and surfaced in the lobby/end screen.
 
 Future iterations can extend the in-memory game state with persistence, real-time messaging, or WebSocket-based turn coordination.
 
