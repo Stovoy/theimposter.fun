@@ -10,7 +10,6 @@ import {
   getLocations,
   getRoundState,
   joinGame,
-  setReady,
   startGame,
   startNextRound,
   submitGuess,
@@ -126,6 +125,8 @@ const errorMessage = (err: unknown) =>
   err instanceof Error ? err.message : "Something went wrong";
 
 const DEFAULT_POLL_INTERVAL = 4500;
+const REALTIME_HEALTH_CHECK_MS = 4000;
+const REALTIME_STALE_THRESHOLD_MS = 7000;
 
 export const createGameSessionStore = () => {
   const internal = writable<GameClientState>(initialState);
@@ -142,6 +143,7 @@ export const createGameSessionStore = () => {
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let manualDisconnect = false;
   let reconnectAttempts = 0;
+  let realtimeHealthTimer: ReturnType<typeof setInterval> | null = null;
 
   const updateState = (fn: (state: GameClientState) => GameClientState) => {
     internal.update((state) => fn(state));
@@ -199,6 +201,36 @@ export const createGameSessionStore = () => {
       realtimeAttempts: reconnectAttempts,
       lastRealtimeError: error ?? (connected ? null : state.lastRealtimeError),
     }));
+  };
+
+  const stopRealtimeHealthCheck = () => {
+    if (realtimeHealthTimer) {
+      clearInterval(realtimeHealthTimer);
+      realtimeHealthTimer = null;
+    }
+  };
+
+  const startRealtimeHealthCheck = () => {
+    if (typeof window === "undefined") return;
+    stopRealtimeHealthCheck();
+    realtimeHealthTimer = window.setInterval(() => {
+      const now = Date.now();
+      const lobbyStale =
+        Boolean(currentState.lobby) &&
+        (!currentState.lastLobbySyncMs ||
+          now - currentState.lastLobbySyncMs > REALTIME_STALE_THRESHOLD_MS);
+      const roundStale =
+        Boolean(currentState.round) &&
+        (!currentState.lastRoundSyncMs ||
+          now - currentState.lastRoundSyncMs > REALTIME_STALE_THRESHOLD_MS);
+
+      if (lobbyStale) {
+        startLobbyPolling({ force: true });
+      }
+      if (roundStale) {
+        startRoundPolling({ force: true });
+      }
+    }, REALTIME_HEALTH_CHECK_MS);
   };
 
   const clearReconnectSchedule = () => {
@@ -287,6 +319,7 @@ export const createGameSessionStore = () => {
       clearReconnectSchedule();
       reconnectAttempts = 0;
       updateRealtimeStatus(true);
+      startRealtimeHealthCheck();
       stopLobbyPolling();
       stopRoundPolling();
       Promise.all([
@@ -315,6 +348,7 @@ export const createGameSessionStore = () => {
 
     realtime.onclose = (event) => {
       realtime = null;
+      stopRealtimeHealthCheck();
       const reason = event.reason || null;
       updateRealtimeStatus(false, reason);
       if (manualDisconnect) {
@@ -343,6 +377,7 @@ export const createGameSessionStore = () => {
 
   function teardownRealtime(manual = false) {
     clearReconnectSchedule();
+    stopRealtimeHealthCheck();
     manualDisconnect = manual;
     if (realtime) {
       try {
@@ -421,15 +456,32 @@ export const createGameSessionStore = () => {
       return lobby;
     } catch (err) {
       const message = errorMessage(err);
+      const lobbyMissing =
+        typeof err === "object" &&
+        err !== null &&
+        "code" in err &&
+        (err as { code?: string }).code === "not_found";
       if (!silent) {
         pushToast("error", message, true);
       }
+      if (lobbyMissing) {
+        saveStoredSession(null);
+      }
       updateState((state) => ({
         ...state,
+        session: lobbyMissing ? null : state.session,
+        lobby: lobbyMissing ? null : state.lobby,
+        round: lobbyMissing ? null : state.round,
+        assignment: lobbyMissing ? null : state.assignment,
         syncingLobby: false,
         lastError: message,
         lastLobbyError: message,
       }));
+      if (lobbyMissing) {
+        stopLobbyPolling();
+        stopRoundPolling();
+        teardownRealtime(true);
+      }
       throw err;
     }
   };
@@ -480,8 +532,18 @@ export const createGameSessionStore = () => {
     updateState((state) => ({ ...state, syncingRound: false }));
   };
 
-  const startLobbyPolling = (interval = DEFAULT_POLL_INTERVAL) => {
-    if (currentState.realtimeConnected) {
+  const startLobbyPolling = (
+    options?: number | { interval?: number; force?: boolean },
+  ) => {
+    const { interval, force } =
+      typeof options === "number"
+        ? { interval: options, force: false }
+        : {
+            interval: options?.interval ?? DEFAULT_POLL_INTERVAL,
+            force: options?.force ?? false,
+          };
+
+    if (currentState.realtimeConnected && !force) {
       stopLobbyPolling();
       return;
     }
@@ -493,11 +555,21 @@ export const createGameSessionStore = () => {
       refreshLobby({ silent: true }).catch(() => {
         // handled
       });
-    }, interval);
+    }, interval ?? DEFAULT_POLL_INTERVAL);
   };
 
-  const startRoundPolling = (interval = DEFAULT_POLL_INTERVAL) => {
-    if (currentState.realtimeConnected) {
+  const startRoundPolling = (
+    options?: number | { interval?: number; force?: boolean },
+  ) => {
+    const { interval, force } =
+      typeof options === "number"
+        ? { interval: options, force: false }
+        : {
+            interval: options?.interval ?? DEFAULT_POLL_INTERVAL,
+            force: options?.force ?? false,
+          };
+
+    if (currentState.realtimeConnected && !force) {
       stopRoundPolling();
       return;
     }
@@ -509,7 +581,7 @@ export const createGameSessionStore = () => {
       refreshRound({ silent: true }).catch(() => {
         // handled
       });
-    }, interval);
+    }, interval ?? DEFAULT_POLL_INTERVAL);
   };
 
   const resetRoundState = () => {
@@ -629,18 +701,6 @@ export const createGameSessionStore = () => {
       const lobby = await updateRules(session.code, hostToken, rules);
       updateState((state) => ({ ...state, lobby }));
       pushToast("success", "Rules updated");
-      return lobby;
-    });
-  };
-
-  const toggleReady = async (isReady: boolean) => {
-    const session = getActiveSession();
-    return withAction(async () => {
-      const lobby = await setReady(session.code, {
-        player_id: session.playerId,
-        is_ready: isReady,
-      });
-      updateState((state) => ({ ...state, lobby }));
       return lobby;
     });
   };
@@ -801,7 +861,6 @@ export const createGameSessionStore = () => {
     startRoundPolling,
     stopRoundPolling,
     setRules,
-    toggleReady,
     beginRound,
     advanceRound,
     abort,
@@ -830,16 +889,6 @@ export const currentPlayer = derived(gameSession, ($game) => {
 export const isHost = derived(gameSession, ($game) => {
   if (!$game.session || !$game.lobby) return false;
   return $game.session.playerId === $game.lobby.leader_id;
-});
-
-export const isReady = derived(gameSession, ($game) => {
-  const session = $game.session;
-  if (!session || !$game.lobby) {
-    return false;
-  }
-  const me =
-    $game.lobby.players.find((player) => player.id === session.playerId) ?? null;
-  return Boolean(me?.is_ready);
 });
 
 export const hostControlsVisible = derived(

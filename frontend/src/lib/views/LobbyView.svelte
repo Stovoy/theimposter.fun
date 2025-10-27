@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { gameSession, currentPlayer, isHost, isReady } from '../stores/gameSession';
+  import { gameSession, currentPlayer, isHost } from '../stores/gameSession';
   import { router } from '../router';
   import { clampRuleValue, formatCategory } from '../rules';
   import { describeRoundOutcome } from '../summary';
@@ -7,7 +7,6 @@
 
   let ruleDraft: GameRules | null = null;
   let savingRules = false;
-  let readying = false;
   let starting = false;
 
   $: state = $gameSession;
@@ -15,7 +14,6 @@
   $: session = state.session;
   $: me = $currentPlayer;
   $: host = $isHost;
-  $: readyStatus = $isReady;
   $: selectedCategories = ruleDraft
     ? ruleDraft.question_categories.map((item) => item.toLowerCase())
     : [];
@@ -29,8 +27,6 @@
   $: lastRoundSummary = lobby
     ? describeRoundOutcome(lobby.last_round, lobby.players)
     : null;
-  $: readyCount = lobby?.ready_player_count ?? 0;
-  $: everyoneReady = lobby?.all_players_ready ?? false;
 
   const phaseLabel = () => {
     if (!lobby) return '';
@@ -64,18 +60,6 @@
       // toast surfaced
     } finally {
       savingRules = false;
-    }
-  };
-
-  const handleReadyToggle = async () => {
-    if (!lobby) return;
-    readying = true;
-    try {
-      await gameSession.toggleReady(!readyStatus);
-    } catch {
-      // toast handled globally
-    } finally {
-      readying = false;
     }
   };
 
@@ -160,9 +144,6 @@
 
     <div class="chips">
       <span class="chip">Players: {lobby.player_count}/{lobby.rules.max_players}</span>
-      <span class="chip chip-ready" class:chip-accent={everyoneReady}>
-        Ready: {readyCount}/{lobby.player_count}
-      </span>
       <span class="chip chip-muted">{phaseLabel()}</span>
       {#if host}
         <span class="chip chip-accent">You&apos;re the host</span>
@@ -174,14 +155,11 @@
         <h2>Players</h2>
         <ul class="players">
           {#each lobby.players as player}
-            <li class:me={player.id === session?.playerId} class:ready={player.is_ready}>
+            <li class:me={player.id === session?.playerId}>
               <div class="player-main">
                 <span class="player-name">{player.name}</span>
                 <span class="player-wins">{player.crew_wins} crew · {player.imposter_wins} imp</span>
               </div>
-              <span class="player-status" class:ready={player.is_ready}>
-                {player.is_ready ? 'Ready' : 'Waiting'}
-              </span>
             </li>
           {/each}
         </ul>
@@ -194,23 +172,13 @@
         {/if}
 
         <div class="lobby-actions">
-          {#if lobby.phase !== 'InRound'}
-            <button
-              class="secondary"
-              type="button"
-              disabled={readying}
-              on:click={handleReadyToggle}
-            >
-              {readying ? 'Updating…' : readyStatus ? 'Cancel ready' : 'Ready up'}
-            </button>
-          {/if}
           <button class="ghost" type="button" on:click={leaveLobby}>Leave lobby</button>
         </div>
       </article>
 
       <article class="card controls">
         <h2>Controls</h2>
-        <p class="muted">Stay prepared for the round and jump in as soon as everyone is ready.</p>
+        <p class="muted">Coordinate with your crew and launch the next round when the host is ready.</p>
 
         <div class="control-buttons">
           <button
@@ -367,10 +335,6 @@
     background: rgba(45, 212, 191, 0.18);
   }
 
-  .chip-ready {
-    background: rgba(147, 197, 253, 0.2);
-  }
-
   .chip-muted {
     background: rgba(15, 23, 42, 0.7);
   }
@@ -446,19 +410,6 @@
   .player-wins {
     font-size: 0.8rem;
     color: rgba(148, 163, 184, 0.8);
-  }
-
-  .player-status {
-    font-size: 0.85rem;
-    color: rgba(148, 163, 184, 0.95);
-    padding: 6px 12px;
-    border-radius: 999px;
-    background: rgba(59, 130, 246, 0.15);
-  }
-
-  .player-status.ready {
-    background: rgba(45, 212, 191, 0.18);
-    color: rgba(15, 118, 110, 0.95);
   }
 
   .last-round {

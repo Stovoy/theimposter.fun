@@ -107,7 +107,6 @@ export interface PlayerSummary {
   name: string;
   crew_wins: number;
   imposter_wins: number;
-  is_ready: boolean;
 }
 
 export interface GameLobby {
@@ -116,8 +115,6 @@ export interface GameLobby {
   rules: GameRules;
   players: PlayerSummary[];
   player_count: number;
-  ready_player_count: number;
-  all_players_ready: boolean;
   created_at_ms: number;
   phase: GamePhase;
   last_round: RoundSummary | null;
@@ -245,13 +242,6 @@ export async function createGame(payload: CreateGamePayload) {
 
 export async function joinGame(code: string, payload: JoinGamePayload) {
   return request<JoinGameResponse>(`/api/games/${code}/join`, {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function setReady(code: string, payload: { player_id: string; is_ready: boolean }) {
-  return request<GameLobby>(`/api/games/${code}/ready`, {
     method: "POST",
     body: JSON.stringify(payload),
   });

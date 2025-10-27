@@ -193,28 +193,28 @@
         {#if host}
           <div class="host-controls">
             <h3>Host controls</h3>
-          <div class="host-buttons">
-            <button
-              class="primary"
-              type="button"
-              disabled={!round.resolution || startingNextRound}
-              on:click={startNextRound}
-            >
-              {startingNextRound ? 'Starting…' : 'Start next round'}
-            </button>
-            <button
-              class="secondary"
-              type="button"
-              disabled={requestingQuestion || Boolean(round.resolution)}
-              on:click={requestNextQuestion}
-            >
-              {requestingQuestion ? 'Loading…' : 'Force next question'}
-            </button>
-            <button
-              class="secondary"
-              type="button"
-              disabled={aborting}
-              on:click={() => abortRound('round')}
+            <div class="host-buttons">
+              <button
+                class="primary"
+                type="button"
+                disabled={!round.resolution || startingNextRound}
+                on:click={startNextRound}
+              >
+                {startingNextRound ? 'Starting…' : 'Start next round'}
+              </button>
+              <button
+                class="secondary"
+                type="button"
+                disabled={requestingQuestion || Boolean(round.resolution)}
+                on:click={requestNextQuestion}
+              >
+                {requestingQuestion ? 'Loading…' : 'Force next question'}
+              </button>
+              <button
+                class="secondary"
+                type="button"
+                disabled={aborting}
+                on:click={() => abortRound('round')}
               >
                 {aborting ? 'Aborting…' : 'Abort round'}
               </button>
@@ -231,6 +231,11 @@
         {/if}
       </article>
     </div>
+  </section>
+{:else if lobby && lobby.phase === 'InRound'}
+  <section class="empty">
+    <h1>Starting round…</h1>
+    <p>Hang tight while we sync the latest round details.</p>
   </section>
 {:else if lobby}
   <section class="empty">

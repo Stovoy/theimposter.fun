@@ -8,7 +8,7 @@ Mobile-first social deduction party game where one player is secretly the impost
 
 This repository contains:
 
-- **Rust backend** (`backend/`): real-time ready API for lobby management.
+- **Rust backend** (`backend/`): real-time lobby API for game management.
 - **Svelte front-end** (`frontend/`): mobile-first web client for creating and joining lobbies.
 - **Caddy gateway** (`deploy/caddy/`): TLS termination, static asset hosting, and reverse proxy routing.
 

@@ -24,13 +24,14 @@
 
     const lobbyCode = state.lobby?.code ?? state.session?.code ?? null;
     const inRoundPhase = state.lobby?.phase === 'InRound';
+    const shouldShowRound = inRoundPhase || Boolean(state.round);
 
-    if (state.round && route.name !== 'round' && route.name !== 'scoreboard' && lobbyCode) {
+    if (shouldShowRound && route.name !== 'round' && route.name !== 'scoreboard' && lobbyCode) {
       router.replace('round', { code: lobbyCode });
       return;
     }
 
-    if (route.name === 'round' && (!state.round || !inRoundPhase)) {
+    if (route.name === 'round' && !shouldShowRound) {
       if (lobbyCode) {
         router.replace('lobby', { code: lobbyCode });
       } else {
